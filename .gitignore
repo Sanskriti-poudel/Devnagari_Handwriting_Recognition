@@ -4,3 +4,6 @@ Datasets/
 *.pt
 __pycache__/
 .ipynb_checkpoints/
+backend/.env
+backend/uploads/
+backend/ocr_results.db
