@@ -59,6 +59,58 @@ os.environ["DEVNAGARI_DATA_ROOT"] = "/content/drive/MyDrive/Devnagari project/Da
 
 ---
 
+## Plan B: Kaggle (when Colab says "Cannot connect to a GPU backend")
+
+Colab's free GPUs are a shared pool with per-account usage limits — when you hit the
+limit, it resets on its own (usually within 12–24 h). **Don't dodge it with a second
+Google account** (against Colab's ToS). Use **Kaggle** instead: a guaranteed
+**~30 GPU-hours/week**, and the training run only needs 1–2 of them.
+
+### One-time prep
+
+**1. Account:** register at https://www.kaggle.com (Google sign-in works), then
+**verify your phone**: avatar → Settings → Phone verification. This unlocks GPU +
+Internet access for notebooks.
+
+**2. Zip the dataset** (zip the *contents* of `Datasets/` so `train/` + `test/` sit at
+the zip root — ~80 MB):
+```powershell
+Compress-Archive -Path Datasets\* -DestinationPath ..\devnagari_preprocessed.zip
+```
+
+**3. Upload it as a Kaggle Dataset:** kaggle.com → **Create → New Dataset** → drag the
+zip in → title it `devnagari-preprocessed` → **Create** (keep it Private). Kaggle
+auto-extracts the zip; the data lands at `/kaggle/input/devnagari-preprocessed/`.
+
+### Each Kaggle session
+
+**4. Import the ready-made notebook:** kaggle.com → **Create → New Notebook** →
+**File → Import Notebook → GitHub tab** → paste
+`https://github.com/Sanskriti-poudel/Devnagari_Handwriting_Recognition/blob/ml/notebooks/kaggle_train_crnn.ipynb`.
+
+**5. Configure the session** (right sidebar):
+- **Session options → Accelerator → GPU T4 x2** (or P100)
+- **Session options → Internet → On** (needed for `git clone`)
+- **Input → Add Input** → search *your* datasets → attach `devnagari-preprocessed`
+
+**6. Run all cells.** Same code, same split, same outputs as Colab — the notebook
+auto-detects the dataset path under `/kaggle/input/`.
+
+**7. Get the outputs:** cell 6 copies `best_model.pth` + `crnn_training.csv` to
+`/kaggle/working/` — download them from the **Output** panel (right sidebar), or
+**Save Version → Save & Run All** to persist them with the notebook.
+
+### Kaggle vs Colab differences
+
+| | Colab | Kaggle |
+|---|---|---|
+| GPU quota | unpredictable pool | ~30 hrs/week, guaranteed |
+| Data access | Drive mount (FUSE — slow, flaky) | attached dataset on local disk (fast) |
+| Idle timeout | ~90 min | ~20 min interactive (use *Save & Run All* for unattended runs) |
+| Outputs | copy to Drive manually | Output panel / saved with version |
+
+---
+
 ## Why each step matters
 
 | Step | Why it's needed |
