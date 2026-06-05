@@ -56,26 +56,42 @@ class CRNNDataset(Dataset):
         return len(self.image_paths)
 
     def __getitem__(self, idx):
-        rel_path = self.image_paths[idx]
-        img_path = os.path.join(DATA_ROOT, rel_path)
+        # Reads from FUSE-mounted storage (Google Drive on Colab) can fail
+        # transiently, and the occasional file is genuinely corrupt. Rather than
+        # killing a multi-hour training run for one bad sample, skip forward to
+        # the next readable image.
+        n = len(self.image_paths)
+        for offset in range(min(50, n)):
+            cur = (idx + offset) % n
+            rel_path = self.image_paths[cur]
+            img_path = os.path.join(DATA_ROOT, rel_path)
 
-        # Preprocess image (returns float32, [0, 1])
-        img_array = preprocess_image(img_path)
+            # Preprocess image (returns float32, [0, 1])
+            try:
+                img_array = preprocess_image(img_path)
+            except (IOError, OSError, cv2.error) as e:
+                print(f"[CRNNDataset] WARN: skipping unreadable image {img_path}: {e}")
+                continue
 
-        # Extract label from path: .../label/image.png -> label
-        label = os.path.basename(os.path.dirname(rel_path))
+            # Extract label from path: .../label/image.png -> label
+            label = os.path.basename(os.path.dirname(rel_path))
 
-        # Convert label (class name) to index
-        if label in self.char_to_idx:
-            label_indices = [self.char_to_idx[label]]
-        else:
-            label_indices = [0]  # Default to first class if unknown
+            # Convert label (class name) to index
+            if label in self.char_to_idx:
+                label_indices = [self.char_to_idx[label]]
+            else:
+                label_indices = [0]  # Default to first class if unknown
 
-        # Convert to tensors
-        img_tensor = torch.from_numpy(img_array).unsqueeze(0)  # (1, 64, 64)
-        label_tensor = torch.tensor(label_indices, dtype=torch.long)
+            # Convert to tensors
+            img_tensor = torch.from_numpy(img_array).unsqueeze(0)  # (1, 64, 64)
+            label_tensor = torch.tensor(label_indices, dtype=torch.long)
 
-        return img_tensor, label_tensor
+            return img_tensor, label_tensor
+
+        raise RuntimeError(
+            f"Could not read any readable image within 50 indices of {idx}; "
+            f"the dataset under {DATA_ROOT} may be missing or corrupt."
+        )
 
     def get_charset(self):
         return self.charset

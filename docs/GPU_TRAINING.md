@@ -51,8 +51,11 @@ os.environ["DEVNAGARI_DATA_ROOT"] = "/content/drive/MyDrive/Devnagari project/Da
 !cp models/crnn/checkpoints/best_model.pth "/content/drive/MyDrive/"
 ```
 
-**4. (Recommended)** Before training, bump batch size for GPU: in
-`models/crnn/train.py` `__main__`, change `batch_size=16` → `batch_size=64`.
+**4.** Batch size auto-scales: 64 on GPU, 16 on CPU. Override with the
+`CRNN_BATCH_SIZE` env var if needed (e.g. on out-of-memory).
+
+> **Shortcut:** instead of typing the cells above, open the ready-made notebook
+> `notebooks/colab_train_crnn.ipynb` in Colab (File → Open notebook → GitHub).
 
 ---
 

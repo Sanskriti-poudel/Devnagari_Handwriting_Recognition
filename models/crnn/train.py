@@ -153,9 +153,13 @@ if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"[Device] Using: {device}")
 
+    # Larger batches on GPU (Colab T4); override either default with CRNN_BATCH_SIZE.
+    batch_size = int(os.environ.get("CRNN_BATCH_SIZE", 64 if device == "cuda" else 16))
+    print(f"[Config] batch_size = {batch_size}")
+
     model, checkpoint_dir = train_crnn(
         num_epochs=50,
-        batch_size=16,
+        batch_size=batch_size,
         learning_rate=0.001,
         device=device,
         checkpoint_dir="models/crnn/checkpoints",
