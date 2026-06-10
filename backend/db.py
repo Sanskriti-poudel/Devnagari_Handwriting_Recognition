@@ -13,7 +13,7 @@ class DocumentImage(Base):
     id = Column(Integer, primary_key=True, index=True)
     original_filename = Column(String)
     saved_path = Column(String)
-    uploaded_at = Column(DateTime, default=datetime.utcnow)
+    uploaded_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class RecognizedText(Base):
@@ -24,7 +24,7 @@ class RecognizedText(Base):
     text = Column(Text)
     confidence = Column(Float)
     processing_time_ms = Column(Float)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 def create_tables():

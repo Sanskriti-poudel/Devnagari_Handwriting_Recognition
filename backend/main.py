@@ -13,7 +13,7 @@ import aiofiles
 from config import ALLOWED_EXTENSIONS, MAX_FILE_SIZE_MB, UPLOAD_DIR
 from schemas import OCRResult, ModelInfo, HealthResponse
 from models.loader import loaded_models, load_all_models
-from services.ocr import run_ocr
+from services.ocr import run_ocr, run_ocr_pdf
 from db import SessionLocal, DocumentImage, RecognizedText, create_tables
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -91,7 +91,12 @@ async def ocr(
         await f.write(contents)
 
     start = time.time()
-    result_text, confidence = run_ocr(save_path, model_name)
+    if ext == "pdf":
+        pages = run_ocr_pdf(save_path, model_name)
+        result_text = "\n\n".join(f"[Page {p['page']}]\n{p['text']}" for p in pages)
+        confidence = sum(p["confidence"] for p in pages) / len(pages) if pages else 0.0
+    else:
+        result_text, confidence = run_ocr(save_path, model_name)
     elapsed_ms = round((time.time() - start) * 1000, 2)
 
     db = SessionLocal()
@@ -123,6 +128,28 @@ async def ocr(
         processing_time_ms=elapsed_ms,
         created_at=created_at,
     )
+
+
+@app.get("/history", response_model=list[OCRResult])
+def list_history(limit: int = 20):
+    db = SessionLocal()
+    try:
+        recs = db.query(RecognizedText).order_by(RecognizedText.id.desc()).limit(limit).all()
+        results = []
+        for rec in recs:
+            doc = db.query(DocumentImage).filter(DocumentImage.id == rec.document_id).first()
+            results.append(OCRResult(
+                id=rec.id,
+                filename=doc.original_filename if doc else "unknown",
+                model_used=rec.model_used,
+                recognized_text=rec.text,
+                confidence=rec.confidence,
+                processing_time_ms=rec.processing_time_ms,
+                created_at=rec.created_at,
+            ))
+        return results
+    finally:
+        db.close()
 
 
 @app.get("/history/{result_id}", response_model=OCRResult)

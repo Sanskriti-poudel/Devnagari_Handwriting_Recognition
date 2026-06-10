@@ -44,3 +44,9 @@ def test_ocr_bad_extension():
 def test_history_not_found():
     r = client.get("/history/99999")
     assert r.status_code == 404
+
+
+def test_history_list():
+    r = client.get("/history")
+    assert r.status_code == 200
+    assert isinstance(r.json(), list)
