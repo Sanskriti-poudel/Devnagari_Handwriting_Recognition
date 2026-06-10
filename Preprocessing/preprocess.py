@@ -27,29 +27,26 @@ def deskew(image):
     return rotated
 
 
-def preprocess_image(img_path: str) -> np.ndarray:
+def preprocess_array(img: np.ndarray) -> np.ndarray:
     """
-    Preprocess a single image: grayscale -> denoise -> adaptive threshold ->
+    Preprocess an in-memory image: grayscale -> denoise -> adaptive threshold ->
     skew correction -> resize -> normalize to [0, 1].
 
-    This is the SINGLE source of truth for preprocessing. Both CRNN training
-    and the backend inference API import this function so train/serve stay
-    consistent (proposal section 3.2.2).
+    This is the SINGLE source of truth for the preprocessing steps. Both
+    `preprocess_image` (file path) and the backend inference API call this so
+    train/serve stay consistent (proposal section 3.2.2). The backend can pass
+    a decoded upload (BGR or grayscale ndarray) here without touching disk.
 
     Args:
-        img_path: absolute or relative path to an image file
+        img: an OpenCV image, either BGR (H, W, 3) or grayscale (H, W).
 
     Returns:
-        np.ndarray: preprocessed image, shape (64, 64), float32 in [0, 1]
-
-    Raises:
-        IOError: if the image cannot be read
+        np.ndarray: preprocessed image, shape (64, 64), float32 in [0, 1].
     """
-    img = cv2.imread(img_path)
-    if img is None:
-        raise IOError(f"Cannot read image: {img_path}")
-
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    if img.ndim == 3:
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = img
     gray = cv2.GaussianBlur(gray, (3, 3), 0)
 
     thresh = cv2.adaptiveThreshold(
@@ -66,6 +63,27 @@ def preprocess_image(img_path: str) -> np.ndarray:
     normalized = resized.astype(np.float32) / 255.0
 
     return normalized
+
+
+def preprocess_image(img_path: str) -> np.ndarray:
+    """
+    Preprocess a single image file. Reads the file then applies the shared
+    `preprocess_array` pipeline.
+
+    Args:
+        img_path: absolute or relative path to an image file
+
+    Returns:
+        np.ndarray: preprocessed image, shape (64, 64), float32 in [0, 1]
+
+    Raises:
+        IOError: if the image cannot be read
+    """
+    img = cv2.imread(img_path)
+    if img is None:
+        raise IOError(f"Cannot read image: {img_path}")
+
+    return preprocess_array(img)
 
 
 def _batch_preprocess(input_dir: str, output_dir: str):

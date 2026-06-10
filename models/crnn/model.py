@@ -83,20 +83,22 @@ class CRNN(nn.Module):
         return log_probs
 
 
-def decode_ctc_greedy(logits, charset, blank_idx=None):
+def decode_ctc_greedy(logits, charset, blank_idx=None, time_first=True):
     """
     Greedy CTC decoding: argmax per timestep, collapse blanks/repeats.
 
     Args:
-        logits: (T, B, num_classes) or (B, T, num_classes)
+        logits: log-probs/logits. By default (T, B, num_classes) — the layout
+            the CRNN emits. Set time_first=False if passing (B, T, num_classes).
         charset: list of characters/class names
-        blank_idx: CTC blank token index (default: last index)
+        blank_idx: CTC blank token index (default: len(charset), i.e. last index)
+        time_first: True if the time axis is dim 0 (the model's native output).
 
     Returns:
-        list of decoded strings
+        list of decoded strings, one per batch element.
     """
-    if logits.dim() == 3 and logits.shape[0] != len(charset):
-        # Assume (B, T, num_classes), convert to (T, B, num_classes)
+    if not time_first:
+        # (B, T, num_classes) -> (T, B, num_classes)
         logits = logits.permute(1, 0, 2)
 
     if blank_idx is None:
