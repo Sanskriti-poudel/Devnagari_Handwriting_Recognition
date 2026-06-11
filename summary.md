@@ -96,6 +96,9 @@ TrOCR evaluator. Re-run once TrOCR weights exist to fill the table + plots.
 ## What's next
 1. **Run `notebooks/kaggle_train_trocr.ipynb` on a Kaggle T4** to produce TrOCR weights + `logs/trocr_eval.json`
    (manual GPU step). Then re-run `python models/compare.py` to populate the comparison.
-2. **Qualitative error analysis (Phase 3):** matras, conjuncts, similar-character confusion —
-   not yet built; needs the TrOCR predictions.
+2. **Qualitative error analysis (Phase 3):** `models/error_analysis.py` — per-class accuracy,
+   most-confused pairs, group stats, confusion heatmap. **Done for CRNN** → `logs/crnn_error_analysis.md`
+   (+ `crnn_confusion_pairs.csv`, `crnn_confusion_heatmap.png`). Headline: 98.67% overall; hardest
+   char थ (tha, 95%); errors cluster in look-alike consonants (घ↔ध, द↔ढ). Analysis core takes
+   (true, pred) class-name lists, so a glyph→class adapter feeds TrOCR predictions through the same code.
 3. Hand `predict.py` (both models) to backend/Savyata.
