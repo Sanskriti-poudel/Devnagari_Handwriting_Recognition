@@ -44,12 +44,22 @@ LOG_FILE = os.path.join(PROJECT_ROOT, "logs", "trocr_training.csv")
 
 
 def configure_model(model, processor):
-    """Standard TrOCR fine-tuning config (special tokens + generation)."""
-    model.config.decoder_start_token_id = processor.tokenizer.cls_token_id
-    model.config.pad_token_id = processor.tokenizer.pad_token_id
-    model.config.eos_token_id = processor.tokenizer.sep_token_id
+    """Standard TrOCR fine-tuning config (special tokens + generation).
+
+    Training needs decoder_start_token_id / pad_token_id / vocab_size on
+    model.config (used to build decoder_input_ids + mask the loss). Generation
+    params (eos, max_length) must live on model.generation_config — newer
+    transformers raises on save_pretrained if they're left on model.config.
+    """
+    tok = processor.tokenizer
+    model.config.decoder_start_token_id = tok.cls_token_id
+    model.config.pad_token_id = tok.pad_token_id
     model.config.vocab_size = model.config.decoder.vocab_size
-    model.config.max_length = 8
+
+    model.generation_config.decoder_start_token_id = tok.cls_token_id
+    model.generation_config.pad_token_id = tok.pad_token_id
+    model.generation_config.eos_token_id = tok.sep_token_id
+    model.generation_config.max_length = 8
     return model
 
 
@@ -80,6 +90,9 @@ def train_trocr():
     epochs = int(os.environ.get("TROCR_EPOCHS", 5))
     max_train = int(os.environ.get("TROCR_MAX_TRAIN", 0))
     lr = float(os.environ.get("TROCR_LR", 5e-5))
+    # num_workers>0 parallelises the per-image cv2 preprocessing so it doesn't
+    # starve the GPU (the main bottleneck at num_workers=0). 2 is safe on Kaggle.
+    num_workers = int(os.environ.get("TROCR_NUM_WORKERS", 2 if device == "cuda" else 0))
 
     print(f"[trocr] device={device} model={DEFAULT_MODEL} batch={batch_size} epochs={epochs}")
     os.makedirs(CHECKPOINT_DIR, exist_ok=True)
@@ -96,8 +109,11 @@ def train_trocr():
     if max_train > 0:
         train_ds = Subset(train_ds, range(min(max_train, len(train_ds))))
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, collate_fn=collate)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, collate_fn=collate)
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
+                              collate_fn=collate, num_workers=num_workers)
+    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False,
+                            collate_fn=collate, num_workers=num_workers)
+    print(f"[trocr] num_workers={num_workers}")
 
     optimizer = AdamW(model.parameters(), lr=lr)
 
