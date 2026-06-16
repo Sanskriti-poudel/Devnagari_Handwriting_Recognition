@@ -6,19 +6,20 @@ a model fails: which characters are hardest, which pairs get confused, and
 whether errors cluster in visually-similar glyphs (matras, conjuncts, look-alike
 consonants/digits). Produces thesis-ready tables + a confusion heatmap.
 
-Currently wired for the CRNN (local checkpoint). The analysis core works on plain
-(true, predicted) class-name lists, so a TrOCR adapter — map emitted glyphs back
-to class names via data.devanagari_labels.GLYPH_TO_CLASS — can feed the same
-functions once TrOCR predictions exist.
+Wired for BOTH models. The analysis core works on plain (true, predicted)
+class-name lists; the CRNN path decodes CTC class ids directly, and the TrOCR
+path maps emitted Devanagari glyphs back to class names via
+data.devanagari_labels.GLYPH_TO_CLASS — so both feed the same functions.
 
-Outputs (logs/):
-    crnn_error_analysis.md      — per-class accuracy, top confused pairs, group stats
-    crnn_confusion_pairs.csv    — every (true -> pred) error with counts
-    crnn_confusion_heatmap.png  — confusions among the classes that have errors
+Outputs (logs/, prefixed by model — crnn_* or trocr_*):
+    <model>_error_analysis.md      — per-class accuracy, top confused pairs, group stats
+    <model>_confusion_pairs.csv    — every (true -> pred) error with counts
+    <model>_confusion_heatmap.png  — confusions among the classes that have errors
 
 Usage:
-    python models/error_analysis.py
-    python models/error_analysis.py --checkpoint kaggle_output/artifacts/best_model.pth
+    python models/error_analysis.py                                   # CRNN (default)
+    python models/error_analysis.py --model crnn --checkpoint kaggle_output/artifacts/best_model.pth
+    python models/error_analysis.py --model trocr --checkpoint models/trocr/checkpoints --device cuda
 """
 
 import os
@@ -93,6 +94,51 @@ def gather_crnn_predictions(checkpoint_path, device="cpu", batch_size=64):
                 # single-character samples -> one class token; guard empties
                 trues.append(gt)
                 preds.append(pred if pred else NONE_TOKEN)
+    return trues, preds
+
+
+# --------------------------------------------------------------------------- #
+# Prediction gathering (TrOCR)
+# --------------------------------------------------------------------------- #
+def gather_trocr_predictions(checkpoint_path, device="cpu", batch_size=8):
+    """Run TrOCR over the test split; return (true_classes, pred_classes).
+
+    TrOCR emits Devanagari glyph strings, so we map both the generated glyph and
+    the ground-truth glyph back to DHCD class names via GLYPH_TO_CLASS — that lets
+    the same analyse()/report code handle both models. An empty or unmapped
+    generation becomes NONE_TOKEN (counts as an error, same as the CRNN path).
+    """
+    sys.path.insert(0, os.path.join(PROJECT_ROOT, "models", "trocr"))
+    from transformers import TrOCRProcessor, VisionEncoderDecoderModel
+    from torch.utils.data import DataLoader
+    from dataset import TrOCRDataset, make_collate  # models/trocr/dataset.py
+    from data.devanagari_labels import GLYPH_TO_CLASS
+
+    processor = TrOCRProcessor.from_pretrained(checkpoint_path)
+    model = VisionEncoderDecoderModel.from_pretrained(checkpoint_path).to(device)
+    model.eval()
+    print(f"[error-analysis] loaded {checkpoint_path} | device={device}")
+
+    ds = TrOCRDataset("test", processor, augment=None)
+    pad_id = processor.tokenizer.pad_token_id
+    loader = DataLoader(ds, batch_size=batch_size, shuffle=False,
+                        collate_fn=make_collate(pad_id))
+
+    def to_class(glyph_str):
+        return GLYPH_TO_CLASS.get(glyph_str.strip(), NONE_TOKEN) if glyph_str.strip() else NONE_TOKEN
+
+    trues, preds = [], []
+    with torch.no_grad():
+        for batch in loader:
+            pixel_values = batch["pixel_values"].to(device)
+            labels = batch["labels"].clone()
+            labels[labels == -100] = pad_id
+            generated = model.generate(pixel_values, max_length=8)
+            pred_glyphs = processor.batch_decode(generated, skip_special_tokens=True)
+            gt_glyphs = processor.batch_decode(labels, skip_special_tokens=True)
+            for pred, gt in zip(pred_glyphs, gt_glyphs):
+                trues.append(to_class(gt))
+                preds.append(to_class(pred))
     return trues, preds
 
 
@@ -254,24 +300,37 @@ def _default_checkpoint():
 
 
 def main():
-    p = argparse.ArgumentParser(description="Qualitative error analysis for the CRNN.")
-    p.add_argument("--checkpoint", default=_default_checkpoint())
+    p = argparse.ArgumentParser(description="Qualitative error analysis (CRNN or TrOCR).")
+    p.add_argument("--model", choices=["crnn", "trocr"], default="crnn",
+                   help="which model to analyse (default crnn)")
+    p.add_argument("--checkpoint", default=None,
+                   help="checkpoint path; defaults to the model's usual location")
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu",
                    choices=["cpu", "cuda"])
-    p.add_argument("--batch-size", type=int, default=64)
+    p.add_argument("--batch-size", type=int, default=None)
     p.add_argument("--no-heatmap", action="store_true")
     args = p.parse_args()
 
-    if not os.path.exists(args.checkpoint):
-        sys.exit(f"[error-analysis] checkpoint not found: {args.checkpoint}")
+    if args.model == "trocr":
+        ckpt = args.checkpoint or os.path.join(PROJECT_ROOT, "models", "trocr", "checkpoints")
+        if not os.path.isdir(ckpt):
+            sys.exit(f"[error-analysis] TrOCR checkpoint dir not found: {ckpt}\n"
+                     f"       Train it first (models/trocr/train.py) or pass --checkpoint.")
+        trues, preds = gather_trocr_predictions(ckpt, args.device, args.batch_size or 8)
+        model_name = "TrOCR"
+    else:
+        ckpt = args.checkpoint or _default_checkpoint()
+        if not os.path.exists(ckpt):
+            sys.exit(f"[error-analysis] checkpoint not found: {ckpt}")
+        trues, preds = gather_crnn_predictions(ckpt, args.device, args.batch_size or 64)
+        model_name = "CRNN"
 
-    trues, preds = gather_crnn_predictions(args.checkpoint, args.device, args.batch_size)
     stats = analyse(trues, preds)
-    _, _, imperfect = write_report(stats, "CRNN")
+    _, _, imperfect = write_report(stats, model_name)
     if not args.no_heatmap:
-        write_heatmap(stats, "CRNN")
+        write_heatmap(stats, model_name)
 
-    print(f"\n[error-analysis] overall accuracy {stats['accuracy']*100:.2f}% "
+    print(f"\n[error-analysis] {model_name}: overall accuracy {stats['accuracy']*100:.2f}% "
           f"| {len(imperfect)} classes below 100% "
           f"| {sum(stats['confusions'].values())} total errors")
 

@@ -4,7 +4,7 @@ Running log of what's been done and how, so anyone can pick up where we left off
 Project: **Devanagari Handwritten Character Recognition (OCR)** — two comparable
 models (CRNN baseline vs TrOCR) + evaluation. Plans in [`plans/ml-developer-tasks.md`](plans/ml-developer-tasks.md).
 
-_Last updated: 2026-06-10._
+_Last updated: 2026-06-16._
 
 ---
 
@@ -45,10 +45,30 @@ CNN → BiLSTM → CTC. Owned by **Sanskriti**. Code in `models/crnn/`.
 - **Backend handoff (Contract A):** `models/crnn/predict.py` — `predict(image) -> {"text", "confidence"}`,
   accepts a path / OpenCV array / pre-normalized array; runs the shared preprocessing; caches the model.
 
-## TrOCR comparison model (pipeline built; needs GPU run)
+## TrOCR comparison model (trained → debugged → fixed; needs a re-run)
 Fine-tuned ViT-encoder → Transformer-decoder (`microsoft/trocr-base-handwritten`).
 Owned by **Chandan**. Code in `models/trocr/`. Built 2026-06-10, structurally validated on CPU
-(`smoke_test.py` PASSes); **full fine-tuning still needs a GPU run on Kaggle**.
+(`smoke_test.py` PASSes).
+
+- **First GPU run (Kaggle T4, 2026-06-11, 3 epochs full set):** trained but scored **0% accuracy
+  / CER 1.0 / WER 1.0** on test, with a pathological **val loss ~9.8** (≈ random for the ~50k vocab)
+  vs train loss 0.40 — i.e. it never generalised and generation produced empty/garbage strings.
+- **Root-caused (2026-06-16, Sanskriti covering Chandan's TrOCR) — two bugs:**
+  1. **Wrong decoder start token.** `train.py:configure_model` overrode `decoder_start_token_id`
+     to `cls`/0; `microsoft/trocr-base-handwritten`'s own config uses **`sep`/2**. Generating from
+     the out-of-distribution start token made the model emit an immediate EOS → empty prediction →
+     exactly CER 1.0 / 0% even though teacher-forced training loss looked fine. **Fixed** to use
+     `sep_token_id` on both `model.config` and `model.generation_config`.
+  2. **Inverted image polarity.** Our preprocessing (`THRESH_BINARY_INV`) is **white-on-black**, but
+     TrOCR was pretrained on **dark-ink-on-light-paper**. Feeding inverted contrast into the
+     pretrained ViT wrecked its features (the near-random val loss from epoch 1). **Fixed** in
+     `dataset.py:array_to_rgb_pil` — TrOCR inputs are now inverted to dark-on-light. (CRNN trains
+     from scratch, keeps the original polarity, and is unaffected.)
+- **Status:** fixes are in `models/trocr/` on branch `ml`. The HF-documented `decoder_start=2` value
+  was confirmed by fetching the base model's `generation_config.json`. A full retrain still needs a
+  **Kaggle T4** (`notebooks/kaggle_train_trocr.ipynb`, now bumped to 8 epochs and chained to run
+  eval → compare → error-analysis in one pass). The 0% `trocr_eval.json` was **not** merged into
+  the main repo's comparison.
 - **Labels:** unlike CRNN's opaque class ids, TrOCR emits text, so targets are the real
   **Devanagari glyphs** via `data/devanagari_labels.py` (e.g. `character_1_ka` → `क`).
 - `dataset.py` — `TrOCRDataset`: same split + same `preprocess` as CRNN → RGB → TrOCR processor.
@@ -94,11 +114,14 @@ TrOCR is optional: with `trocr_eval.json` absent it writes a CRNN-only report an
 TrOCR evaluator. Re-run once TrOCR weights exist to fill the table + plots.
 
 ## What's next
-1. **Run `notebooks/kaggle_train_trocr.ipynb` on a Kaggle T4** to produce TrOCR weights + `logs/trocr_eval.json`
-   (manual GPU step). Then re-run `python models/compare.py` to populate the comparison.
-2. **Qualitative error analysis (Phase 3):** `models/error_analysis.py` — per-class accuracy,
-   most-confused pairs, group stats, confusion heatmap. **Done for CRNN** → `logs/crnn_error_analysis.md`
-   (+ `crnn_confusion_pairs.csv`, `crnn_confusion_heatmap.png`). Headline: 98.67% overall; hardest
-   char थ (tha, 95%); errors cluster in look-alike consonants (घ↔ध, द↔ढ). Analysis core takes
-   (true, pred) class-name lists, so a glyph→class adapter feeds TrOCR predictions through the same code.
+1. **Re-run `notebooks/kaggle_train_trocr.ipynb` on a Kaggle T4** (the only remaining GPU step). With
+   the two fixes above it should now actually learn — watch val loss fall well below ~1 and the
+   `5b` sanity cell print real Devanagari glyphs. The notebook now chains train → eval → `compare.py`
+   → `error_analysis.py --model trocr` in one pass, so it produces `logs/trocr_eval.json`, the filled
+   comparison table/plots, and the TrOCR error-analysis report together.
+2. **Qualitative error analysis (Phase 3):** `models/error_analysis.py` now supports **both** models
+   (`--model crnn|trocr`). CRNN is done → `logs/crnn_error_analysis.md` (+ pairs CSV + heatmap):
+   98.67% overall; hardest char थ (tha, 95%); errors cluster in look-alike consonants (घ↔ध, द↔ढ).
+   The TrOCR adapter maps emitted glyphs back to class names via `GLYPH_TO_CLASS` and reuses the same
+   analysis core; it runs automatically in the notebook once TrOCR weights exist.
 3. Hand `predict.py` (both models) to backend/Savyata.

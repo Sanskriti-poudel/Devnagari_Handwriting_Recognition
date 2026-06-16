@@ -50,13 +50,22 @@ def configure_model(model, processor):
     model.config (used to build decoder_input_ids + mask the loss). Generation
     params (eos, max_length) must live on model.generation_config — newer
     transformers raises on save_pretrained if they're left on model.config.
+
+    CRITICAL: TrOCR's pretrained decoder starts decoding from the </s>/sep token
+    (id 2), NOT <s>/cls (id 0) — see microsoft/trocr-base-handwritten's own
+    generation_config (decoder_start_token_id=2). A previous version overrode this
+    to cls_token_id, so at inference the model started from an out-of-distribution
+    token and emitted an immediate EOS -> empty string -> 0% accuracy / CER 1.0 on
+    the whole test set, even though teacher-forced training loss looked fine. Keep
+    decoder_start aligned with the pretrained model.
     """
     tok = processor.tokenizer
-    model.config.decoder_start_token_id = tok.cls_token_id
+    model.config.decoder_start_token_id = tok.sep_token_id
     model.config.pad_token_id = tok.pad_token_id
+    model.config.eos_token_id = tok.sep_token_id
     model.config.vocab_size = model.config.decoder.vocab_size
 
-    model.generation_config.decoder_start_token_id = tok.cls_token_id
+    model.generation_config.decoder_start_token_id = tok.sep_token_id
     model.generation_config.pad_token_id = tok.pad_token_id
     model.generation_config.eos_token_id = tok.sep_token_id
     model.generation_config.max_length = 8

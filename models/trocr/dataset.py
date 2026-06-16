@@ -40,8 +40,16 @@ def _label_of(rel_path):
 
 
 def array_to_rgb_pil(arr01):
-    """(64,64) float [0,1] -> 3-channel uint8 PIL image for the TrOCR processor."""
-    gray = (arr01 * 255).astype(np.uint8)
+    """(64,64) float [0,1] -> 3-channel uint8 PIL image for the TrOCR processor.
+
+    Our preprocessing (THRESH_BINARY_INV) yields a WHITE character on a BLACK
+    background. TrOCR-base-handwritten was pretrained on natural handwriting —
+    DARK ink on LIGHT paper — so we invert here to match that domain. Feeding the
+    pretrained ViT encoder inverted-contrast images wrecks its features (near-random
+    val loss). CRNN is trained from scratch, so it is unaffected and keeps the
+    original polarity; this inversion is TrOCR-only.
+    """
+    gray = ((1.0 - arr01) * 255).astype(np.uint8)
     rgb = np.stack([gray, gray, gray], axis=-1)
     return Image.fromarray(rgb)
 
