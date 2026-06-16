@@ -20,3 +20,6 @@ tqdm>=4.64
 
 # Evaluation metrics
 jiwer>=3.0                  # CER / WER
+
+# Demo UI
+streamlit>=1.30            # demo/app.py — mid-defense demo over the real CRNN
