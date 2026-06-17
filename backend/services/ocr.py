@@ -23,7 +23,7 @@ def run_ocr(image_path: str, model_name: str) -> tuple[str, float]:
 def _infer(image_path: str, model_name: str) -> tuple[str, float]:
     import torch
     from services.preprocessing import preprocess_for_inference
-    from models.char_map import idx_to_char
+    from models.char_map import idx_to_char, BLANK_IDX
 
     arr = preprocess_for_inference(image_path)
     tensor = torch.from_numpy(arr)
@@ -39,12 +39,13 @@ def _infer(image_path: str, model_name: str) -> tuple[str, float]:
 
 
 def _ctc_greedy_decode(probs, idx_to_char: dict) -> str:
-    """Argmax → collapse consecutive duplicates → strip blank (index 0)."""
+    """Argmax → collapse consecutive duplicates → strip blank (index 46)."""
+    from models.char_map import BLANK_IDX
     indices = probs.argmax(dim=1).tolist()
     chars, prev = [], None
     for idx in indices:
         if idx != prev:
-            if idx != 0:
+            if idx != BLANK_IDX:
                 chars.append(idx_to_char.get(idx, ''))
             prev = idx
     return ''.join(chars)
