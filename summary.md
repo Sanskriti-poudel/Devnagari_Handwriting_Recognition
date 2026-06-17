@@ -4,7 +4,7 @@ Running log of what's been done and how, so anyone can pick up where we left off
 Project: **Devanagari Handwritten Character Recognition (OCR)** — two comparable
 models (CRNN baseline vs TrOCR) + evaluation. Plans in [`plans/ml-developer-tasks.md`](plans/ml-developer-tasks.md).
 
-_Last updated: 2026-06-16._
+_Last updated: 2026-06-17._
 
 ---
 
@@ -81,6 +81,60 @@ Owned by **Chandan**. Code in `models/trocr/`. Built 2026-06-10, structurally va
 - `smoke_test.py` — fast, **network-free** check of label map + preprocessing + augmentation.
 - **Kaggle notebook:** `notebooks/kaggle_train_trocr.ipynb` (mirrors the working CRNN notebook).
 
+## Word/line-level TrOCR — document OCR (built + verified on CPU; training pending) — 2026-06-17
+**Why this track exists.** The CRNN and the first TrOCR are both **single-character**
+models (46 DHCD classes: consonants + digits, *no matras, conjuncts beyond the 3 DHCD
+ones, or punctuation*). The document-mode demo therefore garbles real handwriting:
+testing a photo of `मेरो नाम संस्कृति हो।` returned `त्रगल३४ ज`. Root cause is structural,
+not a bug — character-segmentation cuts only at whitespace, but the **शिरोरेखा (headline)
+joins letters within a word**, so each *word* becomes one blob fed to a model that can
+only emit one base glyph. Reading joined Nepali with matras needs a **sequence model
+trained on word/line images**, not retraining the single-char model on the same data.
+
+Decision (2026-06-17): bootstrap a word-level TrOCR with **synthetic data** (the standard
+"synthetic pretrain → fine-tune on a little real data" OCR recipe), since labelled
+handwritten word/line corpora are scarce. Vocabulary is a **mix** of real Nepali words +
+random valid syllables; training target is **Kaggle/Colab GPU**.
+
+- **`data/generate_synth.py`** — synthetic Nepali word-image generator. Renders text from
+  Devanagari fonts (Windows **Nirmala UI** regular/bold/semilight by default; auto-picks up
+  Mangal / Noto Devanagari if present) with handwriting-like augmentation (shear/slant,
+  rotation, blur, speckle noise, contrast jitter, random margins). Produces **matras,
+  conjuncts (via halant), independent vowels, digits, and danda/punctuation** — exactly what
+  the single-char model can't. Output: `<out>/images/*.png` + `<out>/labels.csv`
+  (`image_path,text`). CLI: `--out --n --real-ratio --fonts --sizes --wordfile --seed`.
+- **`models/crnn/segment.py::segment_line_boxes()`** — returns **one box per text line**
+  (union of each line's char boxes), instead of per-character. Sidesteps the headline problem
+  by never splitting letters within a word — the sequence model reads the whole line.
+- **`models/trocr/dataset_words.py`** — `WordLineDataset` reads `(image → full text)` from
+  `labels.csv`; **deterministic** train/val/test split (seeded shuffle, no separate split
+  file); word-appropriate augmentation (`fill=255` for dark-on-light, unlike the single-char
+  `fill=0`); `MAX_TARGET_LENGTH=64` (a phrase tokenizes to many subword tokens, vs 8 for one
+  glyph). Feeds the PIL image straight to the TrOCR processor — **no** 64×64 single-char
+  preprocessing, and renders dark-ink-on-light to match the processor at both train + serve.
+- **`models/trocr/train_words.py`** — word-level fine-tuner. Reuses the proven loop +
+  special-token config (`configure_model`, `run_epoch`) from `train.py`; raises generation
+  `max_length` to 64; writes to a **separate** `models/trocr/checkpoints_words/` so it never
+  clobbers the single-char checkpoint. Same env overrides as `train.py`; `--labels` points at
+  the synthetic `labels.csv`.
+- **`models/trocr/predict_words.py`** — `predict_line()` (one line/word crop) and
+  `predict_page()` (segment page into lines → read each → stitch into multi-line text +
+  annotated image). Default checkpoint `checkpoints_words/` (override `TROCR_WORDS_CHECKPOINT`).
+- **Verified on CPU (no GPU, no trained weights needed):** all modules compile; generator
+  renders correct Devanagari word images with matching labels; CSV read + deterministic split
+  (30 → 18/6/6, reproducible); `segment_line_boxes` on a 3-line page → exactly 3 line boxes;
+  full data path through the real TrOCR processor → `pixel_values (B,3,384,384)` + multi-token
+  Devanagari labels that **round-trip cleanly** (`संस्कृति।`, `शहर विद्यालय-`).
+- **Kaggle training prepared** (`notebooks/kaggle_train_trocr_words.ipynb` + `notebooks/kernel-metadata-words.json`):
+  clones branch `ml`, **apt-get installs Devanagari fonts** (Kaggle is Linux — no Nirmala/Mangal),
+  **generates the synthetic set in-notebook** (no dataset attachment needed), fine-tunes
+  `train_words.py` on a T4, runs a sanity generation, and saves weights+log to
+  `/kaggle/working/artifacts`. The generator is now **cross-platform** (`default_font_paths()`
+  auto-detects Windows Nirmala/Mangal *or* Linux Lohit/Noto-Devanagari).
+- **Remaining = actually running that notebook on a GPU** (deferred — to be done later). The
+  single-character CRNN/TrOCR tracks are untouched (all new files), so they remain available for
+  the mid-defense comparison.
+
 ## EDA (done — Chandan, Phase 1)
 `eda/run_eda.py`, outputs in `eda/outputs/`:
 - `eda_summary.md`, `class_counts.csv`, `class_distribution.png`,
@@ -99,9 +153,14 @@ python models/crnn/smoke_test.py
 python models/crnn/train.py                                  # GPU recommended
 python models/crnn/evaluate.py --checkpoint kaggle_output/artifacts/best_model.pth --device cpu
 
-# TrOCR: validate data path, then train on Kaggle GPU (notebooks/kaggle_train_trocr.ipynb)
+# TrOCR (single-char): validate data path, then train on Kaggle GPU (notebooks/kaggle_train_trocr.ipynb)
 python models/trocr/smoke_test.py
 python models/trocr/evaluate.py --checkpoint models/trocr/checkpoints   # after training
+
+# Word/line-level TrOCR (document OCR): generate synthetic data, train on GPU, then read a page
+python data/generate_synth.py --out Datasets/synth --n 5000            # synthetic word images + labels.csv
+python models/trocr/train_words.py --labels Datasets/synth/labels.csv  # GPU (Kaggle/Colab) — deferred
+python models/trocr/predict_words.py path/to/page.jpg --mode page      # after training
 ```
 Set `DEVNAGARI_DATA_ROOT` to the folder containing `train/`+`test/` when data isn't at `<repo>/Datasets`.
 Dependencies pinned in **`requirements.txt`** (`pip install -r requirements.txt`) — incl. `jiwer` for eval.
@@ -125,3 +184,12 @@ TrOCR evaluator. Re-run once TrOCR weights exist to fill the table + plots.
    The TrOCR adapter maps emitted glyphs back to class names via `GLYPH_TO_CLASS` and reuses the same
    analysis core; it runs automatically in the notebook once TrOCR weights exist.
 3. Hand `predict.py` (both models) to backend/Savyata.
+
+### Word/line-level (document OCR) — next steps
+4. **Train word-level TrOCR on a GPU** (deferred — user will run later): generate the full
+   synthetic set (`data/generate_synth.py --n 5000`) then `models/trocr/train_words.py` on
+   Kaggle/Colab. Watch val loss fall and sample generations print real multi-glyph words.
+5. **Optional, biggest real-world gain:** fine-tune the synthetic-pretrained model on a small
+   set (~200–500) of hand-labelled real handwritten lines.
+6. **Wire `predict_words.predict_page` into the web app's "Document → text" mode** so the demo
+   uses the word-level model (whole-line reading) instead of per-character segmentation.

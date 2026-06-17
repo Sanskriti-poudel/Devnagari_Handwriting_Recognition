@@ -107,6 +107,30 @@ def segment_lines(bgr, min_height_frac=0.25, char_merge_frac=0.22):
     return lines
 
 
+def segment_line_boxes(bgr, **kwargs):
+    """Whole-LINE bounding boxes for word/line-level OCR (e.g. word-level TrOCR).
+
+    The CRNN path needs per-character boxes (segment_lines), but a sequence model
+    like word-level TrOCR reads a whole line at once and does its own internal
+    character/matra handling — so it wants ONE crop per text line, not per glyph.
+    This collapses each line's character boxes into their union bounding box.
+
+    Crucially this avoids the headline (शिरोरेखा) problem that breaks per-character
+    segmentation on joined writing: we never try to split letters within a word,
+    we just isolate the line and let the model read it.
+
+    Returns: list of (x, y, w, h) line boxes, top-to-bottom.
+    """
+    boxes = []
+    for line in segment_lines(bgr, **kwargs):
+        x0 = min(b[0] for b in line)
+        y0 = min(b[1] for b in line)
+        x1 = max(b[0] + b[2] for b in line)
+        y1 = max(b[1] + b[3] for b in line)
+        boxes.append((x0, y0, x1 - x0, y1 - y0))
+    return boxes
+
+
 def crop_glyph(gray_or_bgr, box, pad_frac=0.0):
     """Crop one character box for the CRNN.
 

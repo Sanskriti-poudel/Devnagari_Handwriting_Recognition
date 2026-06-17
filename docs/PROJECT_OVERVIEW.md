@@ -1,7 +1,7 @@
 # Project Overview — Devanagari Handwritten Document Recognition (OCR)
 
 _A single shared reference so every team member can explain the project the same way
-at the mid-defense. Written 2026-06-16._
+at the mid-defense. Written 2026-06-16; updated 2026-06-17 (word/line-level OCR track added)._
 
 ---
 
@@ -107,17 +107,40 @@ families and compare them**: a traditional deep-learning model (**CRNN: CNN → 
   test image → see the preprocessed input, the predicted **Devanagari glyph**, transliteration, and confidence,
   plus a Results tab with the metrics and error-analysis figures. **One command:** `streamlit run demo/app.py`.
 
+### 3.8 Word/line-level OCR — document recognition — 🟡 built & verified on CPU, training pending (started 2026-06-17)
+This is the move from single characters toward the proposal's real goal: reading **whole handwritten
+lines** of Nepali, **with matras, conjuncts and punctuation**.
+- **Why it was needed:** the demo's "Document → text" mode garbled real handwriting (a photo of
+  `मेरो नाम संस्कृति हो।` came out as `त्रगल३४ ज`). This is **structural, not a bug**: the models are
+  single-character classifiers, and character-segmentation can only cut at whitespace — but the
+  **शिरोरेखा (top headline) joins the letters of a word**, so each *word* became one blob handed to a
+  model that can only output one base glyph. The fix is a **sequence model trained on word/line images**.
+- **Approach (standard OCR recipe):** **synthetic pretraining** — generate word images from Devanagari
+  fonts with handwriting-like distortion (labelled handwritten word datasets are scarce) — then optionally
+  fine-tune on a little real handwriting. Vocabulary is a **mix** of real Nepali words + random syllables.
+- **Built this session (all new files — the single-char tracks are untouched):**
+  - a **synthetic word-image generator** (`data/generate_synth.py`) producing matras/conjuncts/digits/
+    punctuation that the single-char model can't, with image + text-label pairs;
+  - **line segmentation** (`segment_line_boxes`) that crops whole lines instead of characters;
+  - a **word-level TrOCR dataset + trainer + page-inference** path (`dataset_words.py`,
+    `train_words.py`, `predict_words.py`) reusing the existing TrOCR architecture.
+- **Verified on CPU** (no GPU/weights needed): generator output is correct, the data path produces the right
+  tensors, and Devanagari phrases round-trip through the tokenizer. **The only remaining step is the GPU
+  training run, which is deferred** (to be run on Kaggle/Colab later).
+
 ---
 
 ## 4. Honest scope note (be ready for this question)
 
 The proposal's end goal is **document / word-level** recognition of handwritten Nepali. What we have trained
-and measured so far is **isolated character** recognition (the 46-class DHCD dataset). This is a deliberate,
-sensible first milestone — it validates the whole pipeline, both model architectures, and the
-evaluation/comparison framework on clean data. **Moving to full document/line OCR** needs word/line-level
-images with transcriptions (segmentation + sequence labels); that is the natural next phase after mid-defense.
-If asked "is this full document OCR yet?", the honest answer is: *"Not yet — we've proven the pipeline and
-both models at the character level; word/line data and segmentation are the next phase."*
+and measured so far is **isolated character** recognition (the 46-class DHCD dataset) — a deliberate,
+sensible first milestone that validates the whole pipeline, both model architectures, and the
+evaluation/comparison framework on clean data. As of **2026-06-17 we have started the word/line phase**:
+the full word-level pipeline (synthetic data generator → line segmentation → word-level TrOCR dataset,
+trainer, and page inference) is **built and verified on CPU**; what remains is the **GPU training run**.
+If asked "is this full document OCR yet?", the honest answer is: *"At the character level it's trained and
+measured (98.67%); for word/line OCR the full pipeline is built and the data path is verified — we just
+haven't run the GPU training yet."*
 
 ---
 
@@ -126,7 +149,7 @@ both models at the character level; word/line data and segmentation are the next
 1. **TrOCR re-run** on Kaggle GPU (bug already fixed) → fills the comparison table.
 2. **Backend Phase 2:** load the real CRNN (and TrOCR) and replace the mock; Unicode NFC post-processing; PDF support.
 3. **Integrate** the ML code with the backend (they currently live on separate Git branches) and point the frontend at the real API.
-4. **Phase 2 (research):** move toward **word/line-level** Nepali data for true document OCR.
+4. **Word/line-level OCR (started 2026-06-17):** pipeline is built & CPU-verified — remaining is the **GPU training run** of the word-level TrOCR on synthetic data (then an optional fine-tune on a little real handwriting), and wiring `predict_page` into the web app's document mode.
 5. Polish, deploy, and write up the comparison for the report.
 
 _(Full, code-grounded breakdown in [`docs/REMAINING_WORK.md`](REMAINING_WORK.md).)_
