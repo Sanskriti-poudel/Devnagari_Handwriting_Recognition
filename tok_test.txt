@@ -1,0 +1,11 @@
+2026-06-12 10:51:13.851632: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-06-12 10:51:19.790085: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+Using a slow image processor as `use_fast` is unset and a slow processor was saved with this model. `use_fast=True` will be the default behavior in v4.52, even if the model was saved with a slow processor. This will result in minor differences in outputs. You'll still be able to use a slow processor with `use_fast=False`.
+UNK_ID 3
+ka ntok 2 ids [14238, 15722] roundtrip_ok True has_unk False
+kha ntok 2 ids [14238, 25448] roundtrip_ok True has_unk False
+tha ntok 2 ids [14238, 8210] roundtrip_ok True has_unk False
+digit1 ntok 2 ids [22919, 6248] roundtrip_ok True has_unk False
+gya ntok 6 ids [14238, 48, 22919, 8384, 14238, 17772] roundtrip_ok True has_unk False
+kshya ntok 6 ids [14238, 15722, 22919, 8384, 14238, 18400] roundtrip_ok True has_unk False
+latin_cat ntok 1 ids [8729] roundtrip_ok True has_unk False
