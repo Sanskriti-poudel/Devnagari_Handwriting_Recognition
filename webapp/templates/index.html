@@ -23,13 +23,27 @@
 
   <main class="container">
     <section class="card">
-      <h2 class="card__title">Recognize a handwritten character</h2>
-      <p class="card__hint">Upload a single Devanagari character image, or try a random sample from the test set.</p>
+      <h2 class="card__title">Recognize Devanagari handwriting</h2>
+
+      <div class="modeswitch" role="tablist">
+        <button type="button" class="modeswitch__btn is-active" id="modeChar" role="tab">Single character</button>
+        <button type="button" class="modeswitch__btn" id="modeDoc" role="tab">Document → text (beta)</button>
+      </div>
+
+      <p class="card__hint" id="charHint">Upload a single Devanagari character image or PDF, or try a random sample from the test set.</p>
+      <p class="card__hint" id="docHint" hidden>Upload a scanned page (image or PDF). It’s split into characters and each is read by the CRNN, then stitched into editable text.</p>
+
+      <div id="docNote" class="note" hidden>
+        ⚠️ Built on a <strong>single-character</strong> model (46 DHCD classes: consonants + digits).
+        It has no vowel signs (matras) or punctuation, and segmentation only works on
+        <strong>neatly spaced</strong> writing — joined/cursive words won’t split correctly.
+        Output is base glyphs you can edit, not a polished transcription.
+      </div>
 
       <div id="dropzone" class="dropzone">
-        <input type="file" id="fileInput" accept="image/*" hidden />
+        <input type="file" id="fileInput" accept="image/*,application/pdf,.pdf" hidden />
         <div class="dropzone__icon">📤</div>
-        <p class="dropzone__text">Drag &amp; drop an image here</p>
+        <p class="dropzone__text" id="dropText">Drag &amp; drop an image or PDF here</p>
         <p class="dropzone__or">or</p>
         <div class="dropzone__actions">
           <button type="button" class="btn btn--primary" id="browseBtn">Browse files</button>
@@ -65,8 +79,24 @@
       </div>
     </section>
 
+    <section id="docResult" class="card result" hidden>
+      <div class="docgrid">
+        <div class="panel">
+          <span class="panel__label">Detected characters</span>
+          <img id="docAnnotated" class="thumb thumb--doc" alt="segmented page" />
+          <div id="docStats" class="timing"></div>
+        </div>
+        <div class="panel panel--text">
+          <span class="panel__label">Editable Nepali text</span>
+          <textarea id="docText" class="doctext" spellcheck="false"
+                    placeholder="Recognized text appears here…"></textarea>
+          <button type="button" class="btn btn--ghost" id="copyBtn">📋 Copy text</button>
+        </div>
+      </div>
+    </section>
+
     <section id="loading" class="loading" hidden>
-      <span class="spinner"></span> Recognizing…
+      <span class="spinner"></span> <span id="loadingText">Recognizing…</span>
     </section>
   </main>
 

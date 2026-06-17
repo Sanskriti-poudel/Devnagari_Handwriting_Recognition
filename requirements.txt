@@ -23,3 +23,4 @@ jiwer>=3.0                  # CER / WER
 
 # Demo UI
 streamlit>=1.30            # demo/app.py — mid-defense demo over the real CRNN
+PyMuPDF>=1.24              # webapp PDF upload — render first page to an image

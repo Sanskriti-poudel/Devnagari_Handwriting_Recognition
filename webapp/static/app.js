@@ -4,19 +4,25 @@ const dropzone = $("dropzone");
 const fileInput = $("fileInput");
 const errorBox = $("error");
 const resultCard = $("resultCard");
+const docResult = $("docResult");
 const loading = $("loading");
+
+let mode = "char"; // "char" | "doc"
 
 function showError(msg) {
   errorBox.textContent = msg;
   errorBox.hidden = false;
   resultCard.hidden = true;
+  docResult.hidden = true;
 }
 
 function setLoading(on) {
   loading.hidden = !on;
+  $("loadingText").textContent = mode === "doc" ? "Reading document…" : "Recognizing…";
   if (on) {
     errorBox.hidden = true;
     resultCard.hidden = true;
+    docResult.hidden = true;
   }
 }
 
@@ -50,16 +56,31 @@ function render(data, inputSrc) {
   errorBox.hidden = true;
 }
 
+function renderDoc(data) {
+  $("docAnnotated").src = data.annotated;
+  $("docText").value = data.text || "";
+  const pct = Math.round((data.avg_confidence || 0) * 100);
+  $("docStats").textContent =
+    `${data.num_chars} chars · ${data.num_lines} line(s) · avg conf ${pct}% · ${data.time_ms} ms · CPU`;
+  docResult.hidden = false;
+  errorBox.hidden = true;
+}
+
 async function predictFile(file) {
   setLoading(true);
-  const localUrl = URL.createObjectURL(file);
+  // PDFs can't preview in an <img>; let render() fall back to the
+  // server-rendered page (data.original / data.processed)
+  const isImage = (file.type || "").startsWith("image/");
+  const localUrl = isImage ? URL.createObjectURL(file) : null;
+  const endpoint = mode === "doc" ? "/api/document" : "/api/predict";
   try {
     const form = new FormData();
     form.append("image", file);
-    const res = await fetch("/api/predict", { method: "POST", body: form });
+    const res = await fetch(endpoint, { method: "POST", body: form });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Recognition failed.");
-    render(data, localUrl);
+    if (mode === "doc") renderDoc(data);
+    else render(data, localUrl);
   } catch (e) {
     showError(e.message);
   } finally {
@@ -81,7 +102,35 @@ async function predictRandom() {
   }
 }
 
+function setMode(next) {
+  mode = next;
+  const isDoc = next === "doc";
+  $("modeDoc").classList.toggle("is-active", isDoc);
+  $("modeChar").classList.toggle("is-active", !isDoc);
+  $("docHint").hidden = !isDoc;
+  $("charHint").hidden = isDoc;
+  $("docNote").hidden = !isDoc;
+  $("randomBtn").hidden = isDoc;             // random sample is char-only
+  $("dropText").textContent = isDoc
+    ? "Drag & drop a scanned page (image or PDF)"
+    : "Drag & drop an image or PDF here";
+  resultCard.hidden = true;
+  docResult.hidden = true;
+  errorBox.hidden = true;
+}
+
 // wire up events
+$("modeChar").addEventListener("click", () => setMode("char"));
+$("modeDoc").addEventListener("click", () => setMode("doc"));
+$("copyBtn").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText($("docText").value);
+    $("copyBtn").textContent = "✓ Copied";
+    setTimeout(() => ($("copyBtn").textContent = "📋 Copy text"), 1500);
+  } catch (_e) {
+    $("docText").select();
+  }
+});
 $("browseBtn").addEventListener("click", () => fileInput.click());
 $("randomBtn").addEventListener("click", predictRandom);
 fileInput.addEventListener("change", (e) => {
