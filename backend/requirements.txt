@@ -10,3 +10,6 @@ python-dotenv
 pdf2image
 pytest
 httpx
+# Deep learning — install the CPU wheel; for GPU replace with the CUDA variant from pytorch.org
+torch
+torchvision

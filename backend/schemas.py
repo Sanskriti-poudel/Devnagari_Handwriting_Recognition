@@ -13,6 +13,18 @@ class OCRResult(BaseModel):
     created_at: Optional[datetime] = None
 
 
+class PaginatedResults(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[OCRResult]
+
+
+class DeleteResponse(BaseModel):
+    deleted: bool
+    id: int
+
+
 class ModelInfo(BaseModel):
     name: str
     description: str
