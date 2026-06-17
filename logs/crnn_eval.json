@@ -1,0 +1,10 @@
+{
+  "checkpoint": "kaggle_output/artifacts/best_model.pth",
+  "test_samples": 9200,
+  "accuracy": 0.9867,
+  "cer": 0.0003,
+  "wer": 0.0018,
+  "param_count": 6712559,
+  "avg_inference_latency_ms": 4.963,
+  "device": "cpu"
+}
