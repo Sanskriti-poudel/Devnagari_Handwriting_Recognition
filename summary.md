@@ -135,6 +135,9 @@ random valid syllables; training target is **Kaggle/Colab GPU**.
   single-character CRNN/TrOCR tracks are untouched (all new files), so they remain available for
   the mid-defense comparison.
 
+  then fine-tune on Kaggle/Colab. The single-character CRNN/TrOCR tracks are untouched (all
+  new files), so they remain available for the mid-defense comparison.
+
 ## EDA (done — Chandan, Phase 1)
 `eda/run_eda.py`, outputs in `eda/outputs/`:
 - `eda_summary.md`, `class_counts.csv`, `class_distribution.png`,
@@ -184,12 +187,3 @@ TrOCR evaluator. Re-run once TrOCR weights exist to fill the table + plots.
    The TrOCR adapter maps emitted glyphs back to class names via `GLYPH_TO_CLASS` and reuses the same
    analysis core; it runs automatically in the notebook once TrOCR weights exist.
 3. Hand `predict.py` (both models) to backend/Savyata.
-
-### Word/line-level (document OCR) — next steps
-4. **Train word-level TrOCR on a GPU** (deferred — user will run later): generate the full
-   synthetic set (`data/generate_synth.py --n 5000`) then `models/trocr/train_words.py` on
-   Kaggle/Colab. Watch val loss fall and sample generations print real multi-glyph words.
-5. **Optional, biggest real-world gain:** fine-tune the synthetic-pretrained model on a small
-   set (~200–500) of hand-labelled real handwritten lines.
-6. **Wire `predict_words.predict_page` into the web app's "Document → text" mode** so the demo
-   uses the word-level model (whole-line reading) instead of per-character segmentation.
