@@ -73,6 +73,15 @@ NEPALI_WORDS = [
     "दिन", "रात", "हप्ता", "महिना", "वर्ष", "घाम", "जून", "तारा", "आकाश",
     "धर्ती", "नदी", "पहाड", "हिमाल", "जंगल", "पशु", "पंक्षी", "माछा",
     "सपना", "खुसी", "दुख", "जीवन", "मृत्यु", "सत्य", "ज्ञान", "विज्ञान",
+    # extra common words — broaden matra/conjunct coverage for the demo vocabulary
+    "नेपाली", "हस्तलेख", "अक्षर", "शब्द", "वाक्य", "लेख", "पढाइ", "स्कूल",
+    "कलेज", "प्रश्न", "उत्तर", "सरकार", "देशभक्त", "स्वतन्त्रता", "गणतन्त्र",
+    "प्रजातन्त्र", "अधिकार", "कर्तव्य", "समाज", "संसार", "प्रकृति", "वातावरण",
+    "स्वास्थ्य", "शिक्षा", "रोजगार", "विकास", "प्रविधि", "कम्प्युटर", "इन्टरनेट",
+    "मोबाइल", "सञ्चार", "यातायात", "व्यापार", "अर्थतन्त्र", "किसान", "मजदुर",
+    "डाक्टर", "इन्जिनियर", "वकिल", "नर्स", "पुलिस", "सैनिक", "नेता", "जनता",
+    "गोरखा", "पोखरा", "विराटनगर", "धरान", "भक्तपुर", "ललितपुर", "चितवन",
+    "एक", "दुई", "तीन", "चार", "पाँच", "छ", "सात", "आठ", "नौ", "दश",
 ]
 
 
@@ -241,14 +250,18 @@ def augment(img, rng):
 
 # --- driver ----------------------------------------------------------------
 
-def generate(out_dir, n, fonts, rng, real_ratio):
+def generate(out_dir, n, fonts, rng, real_ratio, clean_ratio=0.25):
     img_dir = os.path.join(out_dir, "images")
     os.makedirs(img_dir, exist_ok=True)
     rows = []
     for i in range(1, n + 1):
         text = sample_text(rng, real_ratio)
         font = rng.choice(fonts)
-        img = augment(render_text(text, font, rng), rng)
+        base = render_text(text, font, rng)
+        # `clean_ratio` of the set is left crisp (printed-style), the rest gets
+        # handwriting-like distortion. The demo input is a MIX of printed and
+        # handwritten pages, so the model needs to see both domains.
+        img = base if rng.random() < clean_ratio else augment(base, rng)
         rel = os.path.join("images", f"synth_{i:06d}.png")
         img.convert("L").save(os.path.join(out_dir, rel))
         rows.append((rel.replace("\\", "/"), text))
@@ -276,6 +289,8 @@ def main():
                     help="font pixel sizes to sample from")
     ap.add_argument("--real-ratio", type=float, default=0.5,
                     help="per-token probability of a real word vs random syllables")
+    ap.add_argument("--clean-ratio", type=float, default=0.25,
+                    help="fraction rendered crisp/printed (no handwriting distortion)")
     ap.add_argument("--wordfile", default=None,
                     help="optional newline-separated word list to ADD to the built-in one")
     ap.add_argument("--seed", type=int, default=42)
@@ -293,8 +308,9 @@ def main():
     print(f"[fonts] {len(font_paths)} font file(s): {font_paths}")
     fonts = load_fonts(font_paths, args.sizes)
     print(f"[fonts] {len(fonts)} (font,size) variants")
-    print(f"[gen] {args.n} images, real_ratio={args.real_ratio}, seed={args.seed}")
-    generate(args.out, args.n, fonts, rng, args.real_ratio)
+    print(f"[gen] {args.n} images, real_ratio={args.real_ratio}, "
+          f"clean_ratio={args.clean_ratio}, seed={args.seed}")
+    generate(args.out, args.n, fonts, rng, args.real_ratio, args.clean_ratio)
 
 
 if __name__ == "__main__":

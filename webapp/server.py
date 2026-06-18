@@ -34,10 +34,30 @@ from data.devanagari_labels import class_to_glyph, class_to_translit
 
 TEST_DIR = os.path.join(PROJECT_ROOT, "Datasets", "test")
 
+# Word-level TrOCR weights (the real document-OCR model). When this dir exists
+# with a saved checkpoint, document mode reads whole lines with the word model;
+# otherwise it falls back to the honest CRNN character-segmentation path.
+WORDS_CHECKPOINT = os.environ.get(
+    "TROCR_WORDS_CHECKPOINT",
+    os.path.join(PROJECT_ROOT, "models", "trocr", "checkpoints_words"),
+)
+
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
 # import the real CRNN predictor (loads + caches the model on first call)
 from models.crnn.predict import predict as crnn_predict
+
+
+def _word_model_available():
+    """True iff a saved word-level TrOCR checkpoint is present (config + weights)."""
+    if not os.path.isdir(WORDS_CHECKPOINT):
+        return False
+    has_cfg = os.path.exists(os.path.join(WORDS_CHECKPOINT, "config.json"))
+    has_weights = any(
+        os.path.exists(os.path.join(WORDS_CHECKPOINT, f))
+        for f in ("model.safetensors", "pytorch_model.bin")
+    )
+    return has_cfg and has_weights
 
 
 def _to_data_uri(bgr_or_gray):
@@ -64,7 +84,7 @@ def _recognize(bgr):
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", word_model=_word_model_available())
 
 
 def _pdf_first_page_to_bgr(raw):
@@ -124,18 +144,52 @@ def _read_upload_to_bgr(file):
 @app.route("/api/document", methods=["POST"])
 def api_document():
     """
-    Document mode (Path C): segment a page into characters, run each through the
-    REAL CRNN, and stitch the predictions into editable Devanagari text.
+    Document mode: page (image or PDF) -> editable Devanagari Unicode text.
 
-    NOTE: the CRNN knows only the 46 DHCD classes (no vowel signs / matras /
+    Uses the REAL word-level TrOCR (reads whole lines, including matras /
+    conjuncts / punctuation) when a trained checkpoint is present; otherwise
+    falls back to the honest CRNN character-segmentation path (base glyphs only).
+    """
+    bgr, _is_pdf, err = _read_upload_to_bgr(request.files.get("image"))
+    if err is not None:
+        return err
+    if _word_model_available():
+        return _document_wordlevel(bgr)
+    return _document_charlevel(bgr)
+
+
+def _document_wordlevel(bgr):
+    """Word/line-level TrOCR: segment the page into LINES and read each end-to-end.
+    This is the model that actually reads joined handwriting with matras."""
+    from models.trocr.predict_words import predict_page
+
+    t0 = time.perf_counter()
+    out = predict_page(bgr, checkpoint_path=WORDS_CHECKPOINT, device="cpu")
+    lines = out["lines"]
+    if not lines:
+        return jsonify({"error": "No text lines detected. Try a clearer, higher-contrast scan."}), 400
+
+    confs = [ln["confidence"] for ln in lines if ln.get("confidence")]
+    text = out["text"]
+    return jsonify({
+        "engine": "word-trocr",
+        "text": text,
+        "num_chars": len(text.replace("\n", "").replace(" ", "")),
+        "num_lines": len(lines),
+        "avg_confidence": round(float(np.mean(confs)), 4) if confs else 0.0,
+        "time_ms": round((time.perf_counter() - t0) * 1000.0, 1),
+        "annotated": _to_data_uri(out["annotated"]),
+    })
+
+
+def _document_charlevel(bgr):
+    """Fallback: segment a page into characters and run each through the CRNN.
+
+    The CRNN knows only the 46 DHCD classes (no vowel signs / matras /
     punctuation) and segmentation only works on neatly spaced writing, so the
     output is base glyphs, not fully composed syllables. See models/crnn/segment.py.
     """
     from models.crnn.segment import segment_lines, crop_glyph, annotate
-
-    bgr, _is_pdf, err = _read_upload_to_bgr(request.files.get("image"))
-    if err is not None:
-        return err
 
     t0 = time.perf_counter()
     gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
@@ -162,6 +216,7 @@ def api_document():
         text_lines.append("".join(parts))
 
     return jsonify({
+        "engine": "crnn-chars",
         "text": "\n".join(text_lines),
         "num_chars": n_chars,
         "num_lines": len(lines),

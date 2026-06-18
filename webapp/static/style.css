@@ -115,6 +115,11 @@ body {
   font-size: 13px;
   line-height: 1.5;
 }
+.note--ok {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #065f46;
+}
 
 /* Dropzone */
 .dropzone {

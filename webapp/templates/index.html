@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@500;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
-<body>
+<body data-word-model="{{ 'true' if word_model else 'false' }}">
   <header class="header">
     <div class="header__inner">
       <div class="logo">🖋️</div>
@@ -31,13 +31,21 @@
       </div>
 
       <p class="card__hint" id="charHint">Upload a single Devanagari character image or PDF, or try a random sample from the test set.</p>
-      <p class="card__hint" id="docHint" hidden>Upload a scanned page (image or PDF). It’s split into characters and each is read by the CRNN, then stitched into editable text.</p>
+      <p class="card__hint" id="docHint" hidden>Upload a scanned page (image or PDF). Each text line is read end-to-end and stitched into editable Unicode text.</p>
 
-      <div id="docNote" class="note" hidden>
-        ⚠️ Built on a <strong>single-character</strong> model (46 DHCD classes: consonants + digits).
-        It has no vowel signs (matras) or punctuation, and segmentation only works on
-        <strong>neatly spaced</strong> writing — joined/cursive words won’t split correctly.
-        Output is base glyphs you can edit, not a polished transcription.
+      <!-- shown when the trained word-level TrOCR is available -->
+      <div id="docNoteWord" class="note note--ok" hidden>
+        ✅ Reading with the <strong>word-level TrOCR</strong> model — it reads whole lines
+        end-to-end, including matras (vowel signs), conjuncts and punctuation. Output is
+        editable Unicode you can copy or correct.
+      </div>
+
+      <!-- shown when only the single-character CRNN is available (fallback) -->
+      <div id="docNoteChar" class="note" hidden>
+        ⚠️ The word-level model isn’t loaded, so this is using the <strong>single-character</strong>
+        CRNN (46 DHCD classes: consonants + digits). It has no matras or punctuation, and
+        segmentation only works on <strong>neatly spaced</strong> writing — joined words won’t
+        split correctly. Output is base glyphs, not a polished transcription.
       </div>
 
       <div id="dropzone" class="dropzone">
