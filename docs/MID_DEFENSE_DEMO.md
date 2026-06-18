@@ -27,7 +27,11 @@ it uses it; if not, it falls back to the honest character-level path and says so
 
 ## 1. Train the word-level TrOCR (Kaggle T4, one-time)
 
-Everything is prepared — you just run the notebook.
+> **Owner: Chandan** runs this on his Kaggle. **Hand-off:** the notebook clones
+> branch `ml`, so push `ml` first (step 1 below). When done, Chandan downloads the
+> `artifacts/checkpoints_words/` folder and sends it back to drop into the repo (§2).
+
+Everything is prepared — he just runs the notebook.
 
 1. Push the latest `ml` branch:
    ```bash
