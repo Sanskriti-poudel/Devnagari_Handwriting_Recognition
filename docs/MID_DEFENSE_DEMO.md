@@ -50,8 +50,12 @@ Everything is prepared — he just runs the notebook.
    > Watch **val loss fall well below ~1**. If cell 5b prints empty strings or boxes,
    > stop and check the font-install cell (4) and the sanity images (4b) first.
 
-4. **Download** the `artifacts/checkpoints_words/` folder from the notebook output
-   (Output tab → download, or "Save Version" then download).
+4. **Download** the trained weights. Kaggle can't download a *folder* and the large
+   `model.safetensors` often stalls as a loose file — so the notebook's **last cell zips
+   the checkpoint** into a single `checkpoints_words.zip` under `/kaggle/working/`. Grab
+   that one file from the **Output/Data** panel (⋮ → Download). If your session already
+   died, "Save Version" to persist the output, or pull it with the Kaggle API:
+   `kaggle kernels output <username>/<notebook-slug> -p ./download`.
 
 ### Want it to read your real handwriting better?
 Synthetic-only training reads **printed/clean** Nepali well and neat handwriting decently.

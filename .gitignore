@@ -7,5 +7,6 @@ Datasets/
 # model weight dirs (HF save_pretrained); share via Drive/Kaggle, not git
 models/crnn/checkpoints/
 models/trocr/checkpoints/
+models/trocr/checkpoints_words/
 __pycache__/
 .ipynb_checkpoints/
