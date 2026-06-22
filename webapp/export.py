@@ -90,31 +90,36 @@ def build_searchable_pdf(pages):
             if ok:
                 page.insert_image(fitz.Rect(0, 0, w, h), stream=buf.tobytes())
 
+            fontname = "deva" if fontfile else "helv"
             for ln in pg.get("lines", []):
                 txt = (ln.get("text") or "").strip()
                 if not txt:
                     continue
                 x, y, bw, bh = ln["box"]
                 rect = fitz.Rect(x, y, x + bw, y + bh)
-                # size the (invisible) text roughly to the line height
-                fontsize = max(6.0, min(float(bh) * 0.7, 48.0))
+                # size the (invisible) text to the line height, leaving room for
+                # the font's ascent/descent so it fits inside a box this tall
+                fontsize = max(6.0, min(float(bh) * 0.6, 48.0))
+                placed = False
                 try:
-                    page.insert_textbox(
-                        rect,
-                        txt,
-                        fontsize=fontsize,
-                        fontname="deva" if fontfile else "helv",
-                        fontfile=fontfile,
+                    # insert_textbox returns the leftover vertical space; a NEGATIVE
+                    # value means the text overflowed and NOTHING was drawn — that is
+                    # not an exception, so we must check the return value explicitly.
+                    rc = page.insert_textbox(
+                        rect, txt,
+                        fontsize=fontsize, fontname=fontname, fontfile=fontfile,
                         render_mode=3,   # invisible: visible scan stays, text is searchable
                     )
+                    placed = rc >= 0
                 except Exception:
-                    # last-ditch: place the text at the box origin so search still works
+                    placed = False
+                if not placed:
+                    # fall back to baseline placement; insert_text never clips, so the
+                    # searchable layer is always written even for short/odd boxes
                     try:
                         page.insert_text(
-                            (x, y + bh), txt,
-                            fontsize=fontsize,
-                            fontname="deva" if fontfile else "helv",
-                            fontfile=fontfile,
+                            (x, y + fontsize), txt,
+                            fontsize=fontsize, fontname=fontname, fontfile=fontfile,
                             render_mode=3,
                         )
                     except Exception:
