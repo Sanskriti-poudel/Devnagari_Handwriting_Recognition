@@ -9,6 +9,7 @@ const loading = $("loading");
 
 let mode = "char"; // "char" | "doc"
 const wordModel = document.body.dataset.wordModel === "true";
+let lastDocId = null;   // doc_id from the latest /api/document run (needed for searchable-PDF export)
 
 function showError(msg) {
   errorBox.textContent = msg;
@@ -58,6 +59,7 @@ function render(data, inputSrc) {
 }
 
 function renderDoc(data) {
+  lastDocId = data.doc_id || null;
   $("docAnnotated").src = data.annotated;
   $("docText").value = data.text || "";
   const pct = Math.round((data.avg_confidence || 0) * 100);
@@ -160,4 +162,131 @@ fileInput.addEventListener("change", (e) => {
 dropzone.addEventListener("drop", (e) => {
   const file = e.dataTransfer.files[0];
   if (file) predictFile(file);
+});
+
+// ---------------------------------------------------------------- export
+// Download the (possibly edited) recognized text as txt | docx | searchable pdf.
+async function exportAs(fmt, btn) {
+  const text = $("docText").value;
+  if (!text.trim() && fmt !== "pdf") {
+    showError("Nothing to export yet — run a document scan first.");
+    return;
+  }
+  const body = { format: fmt, text };
+  if (fmt === "pdf") {
+    if (!lastDocId) {
+      showError("Searchable PDF needs the original scan — re-run the document, then export.");
+      return;
+    }
+    body.doc_id = lastDocId;
+  }
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "…";
+  try {
+    const res = await fetch("/api/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || "Export failed.");
+    }
+    const blob = await res.blob();
+    const ext = fmt === "pdf" ? "pdf" : fmt === "docx" ? "docx" : "txt";
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "recognized." + ext;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
+
+$("exportTxt").addEventListener("click", (e) => exportAs("txt", e.currentTarget));
+$("exportDocx").addEventListener("click", (e) => exportAs("docx", e.currentTarget));
+$("exportPdf").addEventListener("click", (e) => exportAs("pdf", e.currentTarget));
+
+// ------------------------------------------------------- romanized typing
+// When enabled, transliterate each Latin "word" to Devanagari as the user
+// presses space / enter (e.g. "namaste " -> "नमस्ते "). Powered by translit.js.
+let romanOn = false;
+$("romanToggle").addEventListener("change", (e) => {
+  romanOn = e.target.checked;
+  $("romanHint").hidden = !romanOn;
+});
+
+function attachRomanizedTyping(el) {
+  el.addEventListener("keydown", (e) => {
+    if (!romanOn || (e.key !== " " && e.key !== "Enter")) return;
+    if (el.selectionStart !== el.selectionEnd) return;       // active selection: leave alone
+    if (typeof window.romanToDevanagari !== "function") return;
+    const pos = el.selectionStart;
+    const m = el.value.slice(0, pos).match(/([A-Za-z]+)$/);  // the word just typed
+    if (!m) return;
+    const token = m[1];
+    const dev = window.romanToDevanagari(token);
+    if (dev === token) return;                               // nothing to convert
+    e.preventDefault();
+    const sep = e.key === "Enter" ? "\n" : " ";
+    const start = pos - token.length;
+    el.value = el.value.slice(0, start) + dev + sep + el.value.slice(pos);
+    const caret = start + dev.length + sep.length;
+    el.selectionStart = el.selectionEnd = caret;
+  });
+}
+attachRomanizedTyping($("docText"));
+
+// --------------------------------------------------------- Preeti tools
+// Live Preeti <-> Unicode conversion (preeti.js). Default Preeti -> Unicode.
+let preetiDir = "p2u"; // "p2u" | "u2p"
+const preetiIn = $("preetiIn");
+const preetiOut = $("preetiOut");
+
+function runPreeti() {
+  const src = preetiIn.value;
+  if (preetiDir === "p2u") {
+    preetiOut.value = window.preetiToUnicode ? window.preetiToUnicode(src) : src;
+  } else {
+    preetiOut.value = window.unicodeToPreeti ? window.unicodeToPreeti(src) : src;
+  }
+}
+
+function setPreetiDir(dir) {
+  preetiDir = dir;
+  const p2u = dir === "p2u";
+  $("dirP2U").classList.toggle("is-active", p2u);
+  $("dirU2P").classList.toggle("is-active", !p2u);
+  $("preetiInLabel").textContent = p2u ? "Preeti text (paste here)" : "Unicode text (paste here)";
+  $("preetiOutLabel").textContent = p2u ? "Unicode" : "Preeti";
+  // the Preeti side is raw Latin keystrokes — show it in a monospace font
+  preetiIn.classList.toggle("doctext--mono", p2u);
+  preetiOut.classList.toggle("doctext--mono", !p2u);
+  preetiIn.placeholder = p2u ? "Paste Preeti-encoded text, e.g.  g]kfn" : "नेपाली युनिकोड यहाँ पेस्ट गर्नुहोस्";
+  runPreeti();
+}
+
+preetiIn.addEventListener("input", runPreeti);
+$("dirP2U").addEventListener("click", () => setPreetiDir("p2u"));
+$("dirU2P").addEventListener("click", () => setPreetiDir("u2p"));
+$("preetiCopy").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(preetiOut.value);
+    $("preetiCopy").textContent = "✓ Copied";
+    setTimeout(() => ($("preetiCopy").textContent = "📋 Copy"), 1500);
+  } catch (_e) {
+    preetiOut.select();
+  }
+});
+$("preetiSwap").addEventListener("click", () => {
+  preetiIn.value = preetiOut.value;
+  setPreetiDir(preetiDir === "p2u" ? "u2p" : "p2u");
 });
