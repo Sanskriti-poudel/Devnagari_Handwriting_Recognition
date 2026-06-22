@@ -1,7 +1,8 @@
 # Project Overview — Devanagari Handwritten Document Recognition (OCR)
 
 _A single shared reference so every team member can explain the project the same way
-at the mid-defense. Written 2026-06-16; updated 2026-06-17 (word/line-level OCR track added)._
+at the mid-defense. Written 2026-06-16; updated 2026-06-22 (document-digitizer web app:
+Preeti↔Unicode, romanized typing, txt/docx/searchable-PDF export)._
 
 ---
 
@@ -102,10 +103,20 @@ families and compare them**: a traditional deep-learning model (**CRNN: CNN → 
   **copy / download .txt**, a **model selector** (CRNN vs Transformer), and confidence/time display.
 - Built against the mock API; needs to be pointed at the real backend once that's wired.
 
-### 3.7 Live demo for the defense — ✅ ready now
-- A **Streamlit app** (`demo/app.py`) runs the **real trained CRNN** (not a mock): upload or pick a random
-  test image → see the preprocessed input, the predicted **Devanagari glyph**, transliteration, and confidence,
-  plus a Results tab with the metrics and error-analysis figures. **One command:** `streamlit run demo/app.py`.
+### 3.7 Live demo + document digitizer — web app — ✅ ready now (updated 2026-06-22)
+The live interface is now a small **Flask + HTML/CSS/vanilla-JS web app** (`webapp/`) backed by the
+**real trained CRNN** (the earlier Streamlit demo was retired). It runs **offline**, CPU is fine
+(`KMP_DUPLICATE_LIB_OK=TRUE python webapp/server.py` → http://localhost:8000), and it covers both the
+character demo and the start of the proposal's real goal — turning a scan into editable Unicode:
+- **Character mode:** upload or pick a random test image → preprocessed input, predicted **Devanagari
+  glyph**, transliteration, confidence, and a ✓/✗ verdict against the true label.
+- **Document mode:** upload a page **or multi-page PDF** → editable Devanagari Unicode (word-level
+  TrOCR when its checkpoint is present, else the honest CRNN character-segmentation fallback), then
+  **download as TXT, DOCX, or a searchable PDF** (the original scan with an invisible, selectable
+  Unicode text layer — so the page becomes Ctrl+F-able).
+- **Nepali text tools (all client-side, offline):** a **Preeti↔Unicode** converter (digitize legacy
+  Preeti-font documents and back), and **romanized typing** (type `namaste` → नमस्ते) so a non-Nepali
+  typist can correct the OCR text.
 
 ### 3.8 Word/line-level OCR — document recognition — 🟡 built & verified on CPU, training pending (started 2026-06-17)
 This is the move from single characters toward the proposal's real goal: reading **whole handwritten
@@ -147,10 +158,9 @@ haven't run the GPU training yet."*
 ## 5. What's left (short list)
 
 1. **TrOCR re-run** on Kaggle GPU (bug already fixed) → fills the comparison table.
-2. **Backend Phase 2:** load the real CRNN (and TrOCR) and replace the mock; Unicode NFC post-processing; PDF support.
-3. **Integrate** the ML code with the backend (they currently live on separate Git branches) and point the frontend at the real API.
-4. **Word/line-level OCR (started 2026-06-17):** pipeline is built & CPU-verified — remaining is the **GPU training run** of the word-level TrOCR on synthetic data (then an optional fine-tune on a little real handwriting), and wiring `predict_page` into the web app's document mode.
-5. Polish, deploy, and write up the comparison for the report.
+2. **Word/line-level OCR (started 2026-06-17):** pipeline is built & CPU-verified — remaining is the **GPU training run** of the word-level TrOCR on synthetic data (then an optional fine-tune on a little real handwriting). `predict_page` is already wired into the web app's document mode, so the trained checkpoint will light up automatically.
+3. **Document digitizer web app — ✅ done & running (2026-06-22):** real CRNN, multi-page PDF, editable Unicode, **TXT/DOCX/searchable-PDF export**, **Preeti↔Unicode**, and **romanized typing**. (This is a self-contained Flask app; the separate React+Vite frontend / FastAPI backend in §3.5–3.6 remain a parallel track.)
+4. Polish, deploy, and write up the comparison for the report.
 
 _(Full, code-grounded breakdown in [`docs/REMAINING_WORK.md`](REMAINING_WORK.md).)_
 
@@ -179,9 +189,11 @@ _(Full, code-grounded breakdown in [`docs/REMAINING_WORK.md`](REMAINING_WORK.md)
 
 ```bash
 # from the repo root
-pip install -r requirements.txt        # first time
-streamlit run demo/app.py              # opens http://localhost:8501
+pip install -r requirements.txt                 # first time
+KMP_DUPLICATE_LIB_OK=TRUE python webapp/server.py   # opens http://localhost:8000
 ```
-Use **"Try it" → "Pick a random test image"** a few times to show live recognition; open the
-**"Results"** tab to show the 98.67% metrics and the confusion heatmap. (Test it once in the
+(The `KMP_DUPLICATE_LIB_OK=TRUE` flag avoids an Anaconda+torch OpenMP clash; harmless elsewhere.)
+Show **Single-character** mode with **🎲 Random sample** a few times for live recognition (✓/✗ vs the
+true label), then **Document → text** to scan a page and **download a searchable PDF / DOCX**, and the
+**Nepali text tools** card for the Preeti↔Unicode converter and romanized typing. (Test it once in the
 presentation browser beforehand so the Devanagari font renders.)

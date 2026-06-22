@@ -4,7 +4,7 @@ Running log of what's been done and how, so anyone can pick up where we left off
 Project: **Devanagari Handwritten Character Recognition (OCR)** — two comparable
 models (CRNN baseline vs TrOCR) + evaluation. Plans in [`plans/ml-developer-tasks.md`](plans/ml-developer-tasks.md).
 
-_Last updated: 2026-06-17._
+_Last updated: 2026-06-22._
 
 ---
 
@@ -138,6 +138,47 @@ random valid syllables; training target is **Kaggle/Colab GPU**.
   then fine-tune on Kaggle/Colab. The single-character CRNN/TrOCR tracks are untouched (all
   new files), so they remain available for the mid-defense comparison.
 
+## Nepali Document Digitizer — web app (front+back done & running; OCR uses CRNN fallback) — 2026-06-22
+Turned the OCR web app (`webapp/`, plain HTML/CSS/vanilla-JS + Flask — the Streamlit demo was
+retired) into a usable **document digitizer**: scan a page → editable Unicode → download. Built
+**offline**, no npm, no React. Three areas committed on their own branches per the team workflow
+(`frontend`, `backend`), then **both merged into `ml`** and verified running end-to-end.
+
+- **Backend (`backend` branch → `webapp/server.py`, `webapp/export.py`, `requirements.txt`):**
+  - `POST /api/document` — image **or multi-page PDF** → editable Devanagari Unicode. Uses the
+    word-level TrOCR when a `checkpoints_words/` checkpoint is present, else the honest **CRNN
+    character-segmentation fallback** (`_word_model_available()` picks). Returns per-page text +
+    per-line boxes + a `doc_id`. NFC-normalized.
+  - `POST /api/export` — `{format: txt|docx|pdf, text, doc_id}`. **txt** (UTF-8), **docx**
+    (`build_docx`, python-docx, Devanagari complex-script font slot `w:cs`), **searchable PDF**
+    (`build_searchable_pdf`, PyMuPDF: original scan + an **invisible, selectable Unicode text
+    layer** rebuilt from the cached page images + OCR line boxes for `doc_id`).
+  - Bounded in-memory `_DOC_CACHE` keyed by `doc_id` (so a searchable PDF can be rebuilt after edits).
+  - **Bug fixed (2026-06-22):** the searchable PDF shipped with **no text layer** —
+    `insert_textbox` returns a *negative* (not an exception) on overflow, so the `try/except`
+    fallback never fired and `fontsize = bh*0.7` overflowed the box. Now sizes at `bh*0.6`, checks
+    the return value, and falls back to `insert_text` (baseline, never clips). Verified: every line
+    is extractable (Ctrl+F / copy).
+- **Frontend (`frontend` branch → `index.html`, `app.js`, `style.css`, + two new modules):**
+  - **`static/preeti.js`** (NEW) — offline **Preeti↔Unicode** converter. `preetiToUnicode` is a
+    faithful port of the canonical Shuvayatra char-map + ordered post-rules (short-i `ि` reorder,
+    reph `{`→`र्`, matra reordering, split-vowel coalescence `अ+ा→आ`); `unicodeToPreeti` is a
+    cluster-aware inverse. Validated in node: **7/7 known forward pairs** (incl. `g]kfn`→नेपाल),
+    **26/26 Unicode→Preeti→Unicode round-trips**.
+  - **`static/translit.js`** — romanized→Devanagari typing aid (`namaste`→नमस्ते), now loaded.
+  - UI: export bar (**TXT / DOCX / Searchable-PDF** → `/api/export`, stores `doc_id`); a
+    **romanized-typing toggle** on the editable text (converts each word on space/Enter); and a
+    **"Nepali text tools" card** = live Preeti↔Unicode converter with a direction toggle + ⇄ swap.
+- **Verified running (`KMP_DUPLICATE_LIB_OK=TRUE python webapp/server.py`, port 8000):** page +
+  both JS modules load; `/api/random` real CRNN (predicted ठ, conf 1.0); `/api/document` →
+  text + `doc_id`; txt/docx/searchable-PDF all export and the PDF text layer is extractable.
+- **Env note:** Anaconda base + `torch` clash on OpenMP (`libiomp5md.dll already initialized`) —
+  run with `KMP_DUPLICATE_LIB_OK=TRUE`. Added deps: `opencv-python`, `PyMuPDF`, `python-docx`,
+  `tqdm`, `torch` (CPU).
+- **Remaining:** OCR *accuracy* on real joined handwriting still needs the **word-level TrOCR GPU
+  run** (the export/editor/Preeti/romanized features all work regardless of which engine loads);
+  optional `tools/preeti.py` / `POST /api/preeti` were **not** built (kept client-side like translit).
+
 ## EDA (done — Chandan, Phase 1)
 `eda/run_eda.py`, outputs in `eda/outputs/`:
 - `eda_summary.md`, `class_counts.csv`, `class_distribution.png`,
@@ -164,6 +205,9 @@ python models/trocr/evaluate.py --checkpoint models/trocr/checkpoints   # after 
 python data/generate_synth.py --out Datasets/synth --n 5000            # synthetic word images + labels.csv
 python models/trocr/train_words.py --labels Datasets/synth/labels.csv  # GPU (Kaggle/Colab) — deferred
 python models/trocr/predict_words.py path/to/page.jpg --mode page      # after training
+
+# Document digitizer web app (Flask, real CRNN; CPU is fine) -> http://localhost:8000
+KMP_DUPLICATE_LIB_OK=TRUE python webapp/server.py                      # KMP flag: Anaconda+torch OpenMP clash
 ```
 Set `DEVNAGARI_DATA_ROOT` to the folder containing `train/`+`test/` when data isn't at `<repo>/Datasets`.
 Dependencies pinned in **`requirements.txt`** (`pip install -r requirements.txt`) — incl. `jiwer` for eval.
