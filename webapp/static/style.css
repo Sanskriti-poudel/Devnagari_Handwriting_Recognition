@@ -115,6 +115,11 @@ body {
   font-size: 13px;
   line-height: 1.5;
 }
+.note--ok {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #065f46;
+}
 
 /* Dropzone */
 .dropzone {
@@ -213,6 +218,42 @@ body {
   background: #fff;
 }
 .doctext:focus { outline: none; border-color: var(--indigo); box-shadow: 0 0 0 3px var(--ring); }
+.doctext--mono {
+  font-family: "SFMono-Regular", "Consolas", "Liberation Mono", Menlo, monospace;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+/* Romanized-typing toggle + hint */
+.toggle {
+  align-self: flex-start;
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 13px; font-weight: 600; color: var(--muted);
+  cursor: pointer; user-select: none;
+}
+.toggle input { accent-color: var(--indigo); width: 15px; height: 15px; cursor: pointer; }
+.texthint {
+  font-size: 12px; color: var(--muted); line-height: 1.5;
+}
+.texthint code, .card__hint code {
+  background: #eef0f6; padding: 1px 6px; border-radius: 6px;
+  font-size: 12px; color: #4338ca;
+}
+
+/* Export / action bar under the editable text */
+.exportbar { display: flex; flex-wrap: wrap; gap: 8px; }
+.exportbar .btn { padding: 9px 14px; font-size: 13px; }
+.btn:disabled { opacity: .6; cursor: default; }
+
+/* Nepali text tools (Preeti converter) */
+.toolgrid {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  align-items: stretch;
+}
+.toolgrid .doctext { min-height: 150px; }
 
 .glyph {
   font-family: "Noto Sans Devanagari", serif;
@@ -268,5 +309,6 @@ body {
 @media (max-width: 640px) {
   .result__grid { grid-template-columns: 1fr; }
   .docgrid { grid-template-columns: 1fr; }
+  .toolgrid { grid-template-columns: 1fr; }
   .badge-acc { display: none; }
 }
