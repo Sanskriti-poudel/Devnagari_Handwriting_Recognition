@@ -23,4 +23,7 @@ jiwer>=3.0                  # CER / WER
 
 # Demo UI
 streamlit>=1.30            # demo/app.py — mid-defense demo over the real CRNN
-PyMuPDF>=1.24              # webapp PDF upload — render first page to an image
+PyMuPDF>=1.24              # webapp PDF upload (read) + searchable-PDF export (write)
+
+# Document export (webapp)
+python-docx>=1.1           # editable .docx export of recognized text
