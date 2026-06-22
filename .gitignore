@@ -10,3 +10,6 @@ models/trocr/checkpoints/
 models/trocr/checkpoints_words/
 __pycache__/
 .ipynb_checkpoints/
+backend/.env
+backend/uploads/
+backend/ocr_results.db
