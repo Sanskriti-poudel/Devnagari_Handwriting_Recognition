@@ -82,7 +82,29 @@ NEPALI_WORDS = [
     "डाक्टर", "इन्जिनियर", "वकिल", "नर्स", "पुलिस", "सैनिक", "नेता", "जनता",
     "गोरखा", "पोखरा", "विराटनगर", "धरान", "भक्तपुर", "ललितपुर", "चितवन",
     "एक", "दुई", "तीन", "चार", "पाँच", "छ", "सात", "आठ", "नौ", "दश",
+    # document / official-form vocabulary — the real target is printed Nepali
+    # forms (complaints, applications), which the earlier synth never covered.
+    "श्रीमान्", "कार्यालय", "प्रमुखज्यू", "प्रहरी", "विषय", "महोदय", "निवेदक",
+    "निवेदिका", "निवेदन", "सम्बन्धमा", "सम्बन्धी", "बमोजिम", "देहाय", "उपरोक्त",
+    "घटना", "कारवाही", "कानून", "पेश", "साइबर", "अपराध", "विद्युतीय", "माध्यम",
+    "ठगी", "सामाजिक", "सञ्जाल", "संलग्न", "कागजात", "आवश्यक", "स्क्रिनसट",
+    "नागरिकता", "प्रतिलिपि", "राहदानी", "पासपोर्ट", "राष्ट्रिय", "परिचयपत्र",
+    "कर्मचारी", "विवरण", "नामथर", "लिङ्ग", "जन्म", "मिति", "ठेगाना", "दस्तखत",
+    "व्यक्तिगत", "सम्पर्क", "नम्बर", "अभिभावक", "संस्था", "मैले", "जानेसम्म",
+    "उल्लिखित", "व्यहोरा", "साँचो", "झुट्टा", "ठहरे", "सहुँला", "गते", "पेज",
 ]
+
+# Latin tokens that appear verbatim on real Nepali forms (mixed-script lines).
+# The earlier synth was pure Devanagari, so the model had never seen Latin and
+# collapsed on lines like "निवेदकको Original ID/URL:-".
+LATIN_TOKENS = [
+    "ID", "URL", "FB", "Messenger", "Insta", "WhatsApp", "Tiktok", "Focal",
+    "Person", "Email", "Original", "No", "OK", "Facebook", "Viber", "Imo",
+]
+
+# Label prefixes / fragments that pattern real form lines.
+LIST_PREFIXES = ["१.", "२.", "३.", "४.", "५.", "६.", "७.", "८.", "९.", "•", "✓"]
+LABEL_SUFFIX = ":-"  # "नामथरः-", "Original ID/URL:-" style trailing marker
 
 
 # --- text sampling ---------------------------------------------------------
@@ -123,6 +145,38 @@ def sample_text(rng, real_ratio):
     # occasionally terminate with a danda / punctuation, like real writing
     if rng.random() < 0.25:
         text += rng.choice(PUNCT) if rng.random() < 0.5 else DANDA
+    return text
+
+
+def sample_line(rng, real_ratio):
+    """A LONG, document-style line (6–16 tokens), optionally mixing Latin tokens,
+    a leading list prefix (१. / • / ✓), slashes, and a ":-" label marker.
+
+    The earlier synth only produced 1–4-token phrases, so the model collapsed on
+    the long printed lines of a real form. This samples the missing regime."""
+    n_tokens = rng.randint(5, 12)
+    tokens = []
+    # ~40% of long lines start like a numbered/bulleted form item
+    if rng.random() < 0.40:
+        tokens.append(rng.choice(LIST_PREFIXES))
+    for _ in range(n_tokens):
+        r = rng.random()
+        if r < 0.12:                       # occasional Latin token (mixed script)
+            tokens.append(rng.choice(LATIN_TOKENS))
+        elif r < 0.85:                     # real Nepali / form word — long lines are
+            tokens.append(rng.choice(NEPALI_WORDS))  # prose/form text, mostly real
+        else:                              # a little short-syllable filler for coverage
+            tokens.append(random_syllable(rng) + rng.choice(MATRAS))
+    # sprinkle slashes between a few adjacent tokens ("निवेदक / निवेदिका", "ID/URL")
+    for i in range(1, len(tokens)):
+        if rng.random() < 0.10:
+            tokens[i] = "/" + tokens[i] if rng.random() < 0.5 else tokens[i] + "/"
+    text = " ".join(tokens)
+    tail = rng.random()
+    if tail < 0.35:
+        text += LABEL_SUFFIX               # form field label ("...:-")
+    elif tail < 0.70:
+        text += DANDA                      # sentence terminator
     return text
 
 
@@ -250,12 +304,15 @@ def augment(img, rng):
 
 # --- driver ----------------------------------------------------------------
 
-def generate(out_dir, n, fonts, rng, real_ratio, clean_ratio=0.25):
+def generate(out_dir, n, fonts, rng, real_ratio, clean_ratio=0.25, long_ratio=0.0):
     img_dir = os.path.join(out_dir, "images")
     os.makedirs(img_dir, exist_ok=True)
     rows = []
     for i in range(1, n + 1):
-        text = sample_text(rng, real_ratio)
+        # `long_ratio` of the set are long document-style lines; the rest are
+        # short 1–4-token phrases (both regimes appear on real pages).
+        text = (sample_line(rng, real_ratio) if rng.random() < long_ratio
+                else sample_text(rng, real_ratio))
         font = rng.choice(fonts)
         base = render_text(text, font, rng)
         # `clean_ratio` of the set is left crisp (printed-style), the rest gets
@@ -285,12 +342,16 @@ def main():
     ap.add_argument("--n", type=int, default=5000, help="number of images")
     ap.add_argument("--fonts", nargs="*", default=None,
                     help="Devanagari .ttf paths; default = Windows Nirmala family")
-    ap.add_argument("--sizes", nargs="*", type=int, default=[40, 52, 64, 80],
-                    help="font pixel sizes to sample from")
+    ap.add_argument("--sizes", nargs="*", type=int, default=[28, 34, 40, 52, 64, 80],
+                    help="font pixel sizes to sample from (small sizes matter: "
+                         "real printed forms have small body text)")
     ap.add_argument("--real-ratio", type=float, default=0.5,
                     help="per-token probability of a real word vs random syllables")
     ap.add_argument("--clean-ratio", type=float, default=0.25,
                     help="fraction rendered crisp/printed (no handwriting distortion)")
+    ap.add_argument("--long-ratio", type=float, default=0.0,
+                    help="fraction generated as long document-style lines "
+                         "(6-16 tokens, mixed Latin/form punctuation)")
     ap.add_argument("--wordfile", default=None,
                     help="optional newline-separated word list to ADD to the built-in one")
     ap.add_argument("--seed", type=int, default=42)
@@ -309,8 +370,9 @@ def main():
     fonts = load_fonts(font_paths, args.sizes)
     print(f"[fonts] {len(fonts)} (font,size) variants")
     print(f"[gen] {args.n} images, real_ratio={args.real_ratio}, "
-          f"clean_ratio={args.clean_ratio}, seed={args.seed}")
-    generate(args.out, args.n, fonts, rng, args.real_ratio, args.clean_ratio)
+          f"clean_ratio={args.clean_ratio}, long_ratio={args.long_ratio}, seed={args.seed}")
+    generate(args.out, args.n, fonts, rng, args.real_ratio, args.clean_ratio,
+             args.long_ratio)
 
 
 if __name__ == "__main__":

@@ -31,9 +31,10 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 
-# A short phrase tokenizes into well under this many subword tokens; generous
-# headroom is cheap and avoids silently truncating labels.
-MAX_TARGET_LENGTH = 64
+# A long document-style line (5-12 tokens, mixed Devanagari/Latin) tokenizes
+# into many subword tokens; 160 gives headroom so labels aren't silently
+# truncated. (Short phrases use far fewer — the cap only bounds the long lines.)
+MAX_TARGET_LENGTH = 160
 
 
 def _read_rows(labels_csv):
