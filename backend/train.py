@@ -42,7 +42,7 @@ class DevanagariDataset(Dataset):
     """
 
     def __init__(self, root: str, img_height: int = 32):
-        from models.char_map import char_to_idx
+        from ml_models.char_map import char_to_idx
         self.img_height = img_height
         self.samples: list[tuple[str, int]] = []
 
@@ -103,8 +103,8 @@ def train(args):
     import sys
     sys.path.insert(0, os.path.dirname(__file__))
 
-    from models.crnn import CRNN
-    from models.char_map import NUM_CLASSES
+    from ml_models.crnn import CRNN
+    from ml_models.char_map import NUM_CLASSES
 
     device = torch.device(args.device)
     model = CRNN(num_classes=NUM_CLASSES).to(device)

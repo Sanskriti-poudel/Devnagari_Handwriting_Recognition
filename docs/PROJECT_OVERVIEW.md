@@ -2,7 +2,9 @@
 
 _A single shared reference so every team member can explain the project the same way
 at the mid-defense. Written 2026-06-16; updated 2026-06-22 (document-digitizer web app:
-Preeti↔Unicode, romanized typing, txt/docx/searchable-PDF export)._
+Preeti↔Unicode, romanized typing, txt/docx/searchable-PDF export); updated 2026-07-03
+(React/FastAPI backend now has real CRNN+TrOCR wired in; word-level TrOCR synth improved
+for long/mixed-script lines, retrain in progress)._
 
 ---
 
@@ -93,15 +95,25 @@ families and compare them**: a traditional deep-learning model (**CRNN: CNN → 
   **qualitative error analysis** (per-class accuracy, most-confused pairs, confusion heatmap) for **both** models.
   These fill in the moment TrOCR's numbers exist.
 
-### 3.5 Backend (inference API) — 🟡 scaffold done (mock), real model not wired
+### 3.5 Backend (inference API) — ✅ real CRNN + TrOCR wired in and verified (updated 2026-07-03)
 - **FastAPI** service with `/health`, `/ocr` (upload + file validation), `/models`, `/history`, request
   logging, error handling, a **SQLite database** (stores documents + recognized text), tests, and a Dockerfile.
-- It currently returns **mock text** — connecting it to the real trained model is the main backend task left.
+- Both models now run **real inference**, verified live (not just unit tests): `GET /health` reports
+  `models_loaded: ['crnn', 'transformer']`, and `POST /ocr` with `model_name=transformer` returns real
+  Devanagari text from the word-level TrOCR checkpoint. Only falls back to mock text if a checkpoint is
+  genuinely missing.
+- Along the way: fixed a train/serve-skew risk (backend was duplicating the shared preprocessing
+  logic instead of calling it), resolved a package-name collision (`backend/models` → `backend/ml_models`)
+  that was blocking the TrOCR import, and fixed a test-harness bug so all 6 backend tests pass.
+- **Remaining:** TrOCR only covers single-image `/ocr` calls — the PDF-page pipeline and the
+  document-mode features (Preeti↔Unicode, TXT/DOCX/searchable-PDF export) that `webapp/` already has
+  haven't been ported here. See §5.
 
-### 3.6 Frontend (web app) — 🟡 built against the mock
+### 3.6 Frontend (web app) — 🟡 built against the mock; backend is real now
 - **React + Vite** app: drag-and-drop upload, image/PDF preview, "Recognize" button, result panel with
   **copy / download .txt**, a **model selector** (CRNN vs Transformer), and confidence/time display.
-- Built against the mock API; needs to be pointed at the real backend once that's wired.
+- Built against the mock API. The backend (§3.5) now serves real CRNN + TrOCR results, so this just
+  needs pointing at it (`VITE_API_URL`) and a pass to verify Unicode renders correctly end-to-end.
 
 ### 3.7 Live demo + document digitizer — web app — ✅ ready now (updated 2026-06-22)
 The live interface is now a small **Flask + HTML/CSS/vanilla-JS web app** (`webapp/`) backed by the
@@ -136,8 +148,15 @@ lines** of Nepali, **with matras, conjuncts and punctuation**.
   - a **word-level TrOCR dataset + trainer + page-inference** path (`dataset_words.py`,
     `train_words.py`, `predict_words.py`) reusing the existing TrOCR architecture.
 - **Verified on CPU** (no GPU/weights needed): generator output is correct, the data path produces the right
-  tensors, and Devanagari phrases round-trip through the tokenizer. **The only remaining step is the GPU
-  training run, which is deferred** (to be run on Kaggle/Colab later).
+  tensors, and Devanagari phrases round-trip through the tokenizer.
+- **Trained once (2026-07-01):** real weights exist at `models/trocr/checkpoints_words/` and are already
+  wired into `webapp/server.py`'s document mode. Testing against a real printed form exposed a **long-line
+  failure mode** (6+ token lines, mixed Devanagari/Latin, list markers) the original short-phrase-only synth
+  never covered.
+- **Synth improved (2026-07-02)** with a long-line generator, official-form vocabulary, and a raised
+  tokenizer length cap to match. A retrain on the improved data got to **best val loss 1.8006 (8 epochs)**
+  before **Kaggle's GPU quota cut the session before the checkpoint was exported** — that run's weights
+  were lost, so the 2026-07-01 checkpoint remains the one in production pending a re-run once quota resets.
 
 ---
 
@@ -157,10 +176,17 @@ haven't run the GPU training yet."*
 
 ## 5. What's left (short list)
 
-1. **TrOCR re-run** on Kaggle GPU (bug already fixed) → fills the comparison table.
-2. **Word/line-level OCR (started 2026-06-17):** pipeline is built & CPU-verified — remaining is the **GPU training run** of the word-level TrOCR on synthetic data (then an optional fine-tune on a little real handwriting). `predict_page` is already wired into the web app's document mode, so the trained checkpoint will light up automatically.
-3. **Document digitizer web app — ✅ done & running (2026-06-22):** real CRNN, multi-page PDF, editable Unicode, **TXT/DOCX/searchable-PDF export**, **Preeti↔Unicode**, and **romanized typing**. (This is a self-contained Flask app; the separate React+Vite frontend / FastAPI backend in §3.5–3.6 remain a parallel track.)
-4. Polish, deploy, and write up the comparison for the report.
+1. **TrOCR re-run** on Kaggle GPU (bug already fixed) → fills the single-char comparison table.
+2. **Word/line-level OCR retrain (2026-07-03):** synth generator now covers long, mixed-script,
+   form-style lines; the 2026-07-02 training run reached best val loss 1.8006 but its checkpoint was
+   lost to a Kaggle quota cutoff before export. Needs a re-run once quota resets — **download/export
+   the checkpoint immediately after training**, before running any further cells.
+3. **Document digitizer web app — ✅ done & running (2026-06-22):** real CRNN, multi-page PDF, editable Unicode, **TXT/DOCX/searchable-PDF export**, **Preeti↔Unicode**, and **romanized typing**. (This is a self-contained Flask app.)
+4. **React+FastAPI backend — ✅ real models wired (2026-07-03):** CRNN and word-level TrOCR both run real
+   inference, verified live. Still missing the document-mode features (PDF pages, Preeti, export) that
+   `webapp/` has, and the React frontend still needs to be pointed at it. **Decide** whether this stack
+   or `webapp/` is the one to keep building on — they're currently two parallel, unequal UIs.
+5. Polish, deploy, and write up the comparison for the report.
 
 _(Full, code-grounded breakdown in [`docs/REMAINING_WORK.md`](REMAINING_WORK.md).)_
 
@@ -172,7 +198,7 @@ _(Full, code-grounded breakdown in [`docs/REMAINING_WORK.md`](REMAINING_WORK.md)
 |---|---|---|
 | **Sanskriti Poudel** | ML lead — CRNN baseline + evaluation/comparison; frontend | CRNN trained & evaluated (98.67%), error analysis, demo ✅ |
 | **Chandan Dhakal** | ML — TrOCR Transformer + EDA/augmentation; frontend | EDA ✅; TrOCR built + bug fixed, needs GPU re-run 🟡 |
-| **Savyata Poudel** | Backend (FastAPI + DB) + frontend integration | API scaffold + DB + tests ✅; real-model wiring left 🟡 |
+| **Savyata Poudel** | Backend (FastAPI + DB) + frontend integration | API scaffold + DB + tests ✅; real CRNN+TrOCR wiring ✅ (2026-07-03); frontend still points at mock 🟡 |
 | **Bipin Jung Thapa** | (Supporting) | — |
 
 ---

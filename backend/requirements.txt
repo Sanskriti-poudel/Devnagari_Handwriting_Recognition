@@ -13,3 +13,4 @@ httpx
 # Deep learning — install the CPU wheel; for GPU replace with the CUDA variant from pytorch.org
 torch
 torchvision
+transformers>=4.30          # TrOCR (VisionEncoderDecoderModel, TrOCRProcessor)

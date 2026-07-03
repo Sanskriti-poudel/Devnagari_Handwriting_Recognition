@@ -4,7 +4,7 @@ Running log of what's been done and how, so anyone can pick up where we left off
 Project: **Devanagari Handwritten Character Recognition (OCR)** — two comparable
 models (CRNN baseline vs TrOCR) + evaluation. Plans in [`plans/ml-developer-tasks.md`](plans/ml-developer-tasks.md).
 
-_Last updated: 2026-06-22._
+_Last updated: 2026-07-03._
 
 ---
 
@@ -81,7 +81,7 @@ Owned by **Chandan**. Code in `models/trocr/`. Built 2026-06-10, structurally va
 - `smoke_test.py` — fast, **network-free** check of label map + preprocessing + augmentation.
 - **Kaggle notebook:** `notebooks/kaggle_train_trocr.ipynb` (mirrors the working CRNN notebook).
 
-## Word/line-level TrOCR — document OCR (built + verified on CPU; training pending) — 2026-06-17
+## Word/line-level TrOCR — document OCR (trained once; retrain in progress) — 2026-06-17 → 2026-07-03
 **Why this track exists.** The CRNN and the first TrOCR are both **single-character**
 models (46 DHCD classes: consonants + digits, *no matras, conjuncts beyond the 3 DHCD
 ones, or punctuation*). The document-mode demo therefore garbles real handwriting:
@@ -131,12 +131,34 @@ random valid syllables; training target is **Kaggle/Colab GPU**.
   `train_words.py` on a T4, runs a sanity generation, and saves weights+log to
   `/kaggle/working/artifacts`. The generator is now **cross-platform** (`default_font_paths()`
   auto-detects Windows Nirmala/Mangal *or* Linux Lohit/Noto-Devanagari).
-- **Remaining = actually running that notebook on a GPU** (deferred — to be done later). The
-  single-character CRNN/TrOCR tracks are untouched (all new files), so they remain available for
-  the mid-defense comparison.
-
-  then fine-tune on Kaggle/Colab. The single-character CRNN/TrOCR tracks are untouched (all
-  new files), so they remain available for the mid-defense comparison.
+- **First trained checkpoint (2026-07-01, Kaggle T4):** trained on the original short-phrase-only
+  synth (1–4 tokens/line). Real weights landed locally at `models/trocr/checkpoints_words/`
+  (1.3 GB) and are already wired into `webapp/server.py` — `_word_model_available()` is true, so
+  document mode uses word-TrOCR instead of the CRNN character fallback.
+- **Real-form failure mode found:** testing this checkpoint against an actual printed Nepali
+  complaint form showed it collapsing on **long lines** (6+ tokens, mixed Devanagari/Latin,
+  list markers, `:-` field labels) — the synth never generated anything that long or that mixed.
+- **Synth generator improved (2026-07-02, `ml` commit `9ba7e1ca`)** to cover that regime:
+  - `sample_line()` — new long-line generator (5–13 tokens; docstring says up to 16, tracked as a
+    known doc/impl mismatch to tighten later), optional numbered/bulleted list prefix
+    (१./•/✓), occasional Latin tokens (`ID`, `URL`, `Email`, `Facebook`, …), `/`-joined tokens,
+    and a `:-` form-label suffix.
+  - `NEPALI_WORDS` extended with document/official-form vocabulary (श्रीमान्, निवेदन, प्रहरी,
+    सम्बन्धमा, कार्यालय, दस्तखत, …) — the earlier list skewed conversational/general.
+  - `--long-ratio` CLI flag mixes long document lines in with the original short phrases.
+  - `MAX_TARGET_LENGTH` raised **64 → 160** in `dataset_words.py` so the longer labels aren't
+    silently truncated during training (`predict_words.py` imports the same constant, so
+    generation stays in sync automatically).
+- **Retrain attempt (2026-07-02, Kaggle T4):** 12k images, 8 epochs, best val loss **1.8006**
+  (epoch 8) on the improved synth. **Kaggle's GPU quota was exceeded before the checkpoint was
+  exported off the session**, so this run's weights were lost — the 2026-07-01 checkpoint above is
+  still the one in use pending a re-run once quota resets. Lesson applied going forward:
+  zip + download the checkpoint (or commit a notebook version) immediately after training
+  finishes, before running any further cells.
+- **Remaining:** re-run training on the improved synth once GPU quota resets, verify the
+  sanity cell on the longest generated lines (now explicitly sampled, not just a random tail),
+  and swap the new checkpoint into `models/trocr/checkpoints_words/`. The single-character
+  CRNN/TrOCR tracks are untouched, so they remain available for the mid-defense comparison.
 
 ## Nepali Document Digitizer — web app (front+back done & running; OCR uses CRNN fallback) — 2026-06-22
 Turned the OCR web app (`webapp/`, plain HTML/CSS/vanilla-JS + Flask — the Streamlit demo was
@@ -179,6 +201,45 @@ retired) into a usable **document digitizer**: scan a page → editable Unicode 
   run** (the export/editor/Preeti/romanized features all work regardless of which engine loads);
   optional `tools/preeti.py` / `POST /api/preeti` were **not** built (kept client-side like translit).
 
+## React + FastAPI backend — real model wiring (done) — 2026-07-03
+The `backend` branch's FastAPI service (`backend/`) had a scaffold with mock OCR
+(`docs/REMAINING_WORK.md`'s "biggest gap"). Investigating found CRNN inference was
+already real (not mock, contrary to the stale doc) — `services/ocr.py` did genuine CTC
+decoding. What was actually still missing was the **TrOCR/transformer path** and one
+real bug:
+
+- **`backend/services/preprocessing.py`** duplicated `Preprocessing/preprocess.py`'s
+  logic instead of calling it — a train/serve-skew risk (same bug class the shared
+  module was written to prevent). Now calls `Preprocessing.preprocess_image()` directly.
+- **`backend/models/` renamed to `backend/ml_models/`** — it collided by name with the
+  repo-root `models/` package, which blocked importing `models.trocr.predict_words`
+  from the backend (whichever "models" got imported first into `sys.modules` would win
+  for the whole process). All internal imports (`main.py`, `services/ocr.py`,
+  `train.py`) updated to match.
+- **`config.py`**: `TRANSFORMER_MODEL_PATH` now points at
+  `models/trocr/checkpoints_words` (the only TrOCR checkpoint with real trained
+  weights — the single-char `checkpoints/` dir's `model.safetensors` is 0 bytes,
+  never trained) instead of a nonexistent `models/transformer.pth`.
+- **`ml_models/loader.py` / `services/ocr.py`**: `_load_transformer` / `_infer_transformer`
+  delegate to `models/trocr/predict_words.py`'s existing cached loader and
+  `predict_line()` — no second implementation of TrOCR inference, and the same
+  `DEVICE` is used at load-time and call-time so the two hit the same `lru_cache` entry
+  instead of double-loading the 1.3 GB model.
+- **Verified live**, not just unit tests: `GET /health` → `models_loaded: ['crnn',
+  'transformer']`; `POST /ocr` with `model_name=transformer` on a real dataset image →
+  200 OK with real Devanagari text (`शः`, confidence 0.91), not the mock fallback string.
+- **Test suite**: created a `.venv` for `backend/` (torch/transformers/fastapi were never
+  installed there), added `transformers` to `requirements.txt`. Fixed a pre-existing bug
+  in `tests/test_api.py` — `TestClient(app)` wasn't used as a context manager, so
+  FastAPI's `lifespan` (which calls `create_tables()`) never ran, and `/history` failed
+  with "no such table". All **6/6 tests now pass**.
+- **Remaining on this track:** TrOCR only handles single-image `/ocr` calls so far — the
+  PDF-page pipeline (`run_ocr_pdf`) and the document-mode features the Flask `webapp/`
+  already has (Preeti↔Unicode, TXT/DOCX/searchable-PDF export) haven't been ported to
+  the React/FastAPI stack. Whether that's worth doing depends on whether `webapp/` or
+  the React+FastAPI app is meant to be the shipped frontend — currently two parallel
+  UIs exist.
+
 ## EDA (done — Chandan, Phase 1)
 `eda/run_eda.py`, outputs in `eda/outputs/`:
 - `eda_summary.md`, `class_counts.csv`, `class_distribution.png`,
@@ -220,14 +281,20 @@ TrOCR is optional: with `trocr_eval.json` absent it writes a CRNN-only report an
 TrOCR evaluator. Re-run once TrOCR weights exist to fill the table + plots.
 
 ## What's next
-1. **Re-run `notebooks/kaggle_train_trocr.ipynb` on a Kaggle T4** (the only remaining GPU step). With
-   the two fixes above it should now actually learn — watch val loss fall well below ~1 and the
-   `5b` sanity cell print real Devanagari glyphs. The notebook now chains train → eval → `compare.py`
-   → `error_analysis.py --model trocr` in one pass, so it produces `logs/trocr_eval.json`, the filled
-   comparison table/plots, and the TrOCR error-analysis report together.
-2. **Qualitative error analysis (Phase 3):** `models/error_analysis.py` now supports **both** models
+1. **Re-run `notebooks/kaggle_train_trocr.ipynb` on a Kaggle T4** (the only remaining GPU step for the
+   single-char comparison model). With the two fixes above it should now actually learn — watch val
+   loss fall well below ~1 and the `5b` sanity cell print real Devanagari glyphs. The notebook now
+   chains train → eval → `compare.py` → `error_analysis.py --model trocr` in one pass, so it produces
+   `logs/trocr_eval.json`, the filled comparison table/plots, and the TrOCR error-analysis report together.
+2. **Re-run `notebooks/kaggle_train_trocr_words.ipynb`** once Kaggle GPU quota resets, on the improved
+   synth (long lines + form vocab, §"Word/line-level TrOCR" above). **Zip and download the checkpoint
+   immediately after training finishes** — the 2026-07-02 run's weights were lost to a quota cutoff
+   before export.
+3. **Qualitative error analysis (Phase 3):** `models/error_analysis.py` now supports **both** models
    (`--model crnn|trocr`). CRNN is done → `logs/crnn_error_analysis.md` (+ pairs CSV + heatmap):
    98.67% overall; hardest char थ (tha, 95%); errors cluster in look-alike consonants (घ↔ध, द↔ढ).
    The TrOCR adapter maps emitted glyphs back to class names via `GLYPH_TO_CLASS` and reuses the same
    analysis core; it runs automatically in the notebook once TrOCR weights exist.
-3. Hand `predict.py` (both models) to backend/Savyata.
+4. Decide whether `webapp/` (Flask, has the full document digitizer) or the React+FastAPI app
+   (`backend`/`frontend` branches, now has real CRNN+TrOCR wired but no document-mode/export/Preeti
+   features) is the app to keep polishing — right now they're two parallel, unequal UIs.

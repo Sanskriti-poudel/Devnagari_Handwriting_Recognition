@@ -4,7 +4,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from fastapi.testclient import TestClient
 from main import app
 
-client = TestClient(app)
+# TestClient must be used as a context manager to trigger FastAPI's lifespan
+# (create_tables() + load_all_models()) — otherwise DB tables never get created.
+client = TestClient(app).__enter__()
 
 
 def test_health():
