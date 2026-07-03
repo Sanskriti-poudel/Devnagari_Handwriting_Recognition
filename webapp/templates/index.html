@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Devanagari OCR</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body data-word-model="{{ 'true' if word_model else 'false' }}">
+  <header class="header">
+    <div class="header__inner">
+      <div class="logo">🖋️</div>
+      <div>
+        <h1 class="header__title">Devanagari OCR</h1>
+        <p class="header__subtitle">देवनागरी हस्तलेख पहिचान</p>
+      </div>
+      <span class="badge-acc">CRNN · 98.67% test acc</span>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="card">
+      <h2 class="card__title">Recognize Devanagari handwriting</h2>
+
+      <div class="modeswitch" role="tablist">
+        <button type="button" class="modeswitch__btn is-active" id="modeChar" role="tab">Single character</button>
+        <button type="button" class="modeswitch__btn" id="modeDoc" role="tab">Document → text (beta)</button>
+      </div>
+
+      <p class="card__hint" id="charHint">Upload a single Devanagari character image or PDF, or try a random sample from the test set.</p>
+      <p class="card__hint" id="docHint" hidden>Upload a scanned page (image or PDF). Each text line is read end-to-end and stitched into editable Unicode text.</p>
+
+      <!-- shown when the trained word-level TrOCR is available -->
+      <div id="docNoteWord" class="note note--ok" hidden>
+        ✅ Reading with the <strong>word-level TrOCR</strong> model — it reads whole lines
+        end-to-end, including matras (vowel signs), conjuncts and punctuation. Output is
+        editable Unicode you can copy or correct.
+      </div>
+
+      <!-- shown when only the single-character CRNN is available (fallback) -->
+      <div id="docNoteChar" class="note" hidden>
+        ⚠️ The word-level model isn’t loaded, so this is using the <strong>single-character</strong>
+        CRNN (46 DHCD classes: consonants + digits). It has no matras or punctuation, and
+        segmentation only works on <strong>neatly spaced</strong> writing — joined words won’t
+        split correctly. Output is base glyphs, not a polished transcription.
+      </div>
+
+      <div id="dropzone" class="dropzone">
+        <input type="file" id="fileInput" accept="image/*,application/pdf,.pdf" hidden />
+        <div class="dropzone__icon">📤</div>
+        <p class="dropzone__text" id="dropText">Drag &amp; drop an image or PDF here</p>
+        <p class="dropzone__or">or</p>
+        <div class="dropzone__actions">
+          <button type="button" class="btn btn--primary" id="browseBtn">Browse files</button>
+          <button type="button" class="btn btn--ghost" id="randomBtn">🎲 Random sample</button>
+        </div>
+      </div>
+
+      <div id="error" class="alert" hidden></div>
+    </section>
+
+    <section id="resultCard" class="card result" hidden>
+      <div class="result__grid">
+        <div class="panel">
+          <span class="panel__label">Input</span>
+          <img id="inputImg" class="thumb" alt="input" />
+        </div>
+        <div class="panel">
+          <span class="panel__label">What the model sees</span>
+          <img id="procImg" class="thumb thumb--proc" alt="preprocessed" />
+        </div>
+        <div class="panel panel--pred">
+          <span class="panel__label">Prediction</span>
+          <div id="glyph" class="glyph">—</div>
+          <div id="translit" class="translit"></div>
+          <code id="className" class="classname"></code>
+          <div class="conf">
+            <div class="conf__bar"><span id="confFill" class="conf__fill"></span></div>
+            <span id="confText" class="conf__text"></span>
+          </div>
+          <div id="verdict" class="verdict" hidden></div>
+          <div id="timing" class="timing"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="docResult" class="card result" hidden>
+      <div class="docgrid">
+        <div class="panel">
+          <span class="panel__label">Detected characters</span>
+          <img id="docAnnotated" class="thumb thumb--doc" alt="segmented page" />
+          <div id="docStats" class="timing"></div>
+        </div>
+        <div class="panel panel--text">
+          <span class="panel__label">Editable Nepali text</span>
+          <label class="toggle" title="Type Nepali phonetically — e.g. namaste → नमस्ते (converts each word as you press space)">
+            <input type="checkbox" id="romanToggle" /> ⌨️ Romanized typing
+          </label>
+          <textarea id="docText" class="doctext" spellcheck="false"
+                    placeholder="Recognized text appears here…"></textarea>
+          <p class="texthint" id="romanHint" hidden>Type a word the way it sounds, then press space — <code>namaste</code> → नमस्ते. Capitals pick retroflex/aspirate forms (T, Th, D, N, S).</p>
+          <div class="exportbar">
+            <button type="button" class="btn btn--ghost" id="copyBtn">📋 Copy</button>
+            <button type="button" class="btn btn--ghost" id="exportTxt">⬇️ .txt</button>
+            <button type="button" class="btn btn--ghost" id="exportDocx">⬇️ .docx</button>
+            <button type="button" class="btn btn--ghost" id="exportPdf">⬇️ Searchable PDF</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" id="toolsCard">
+      <h2 class="card__title">Nepali text tools</h2>
+      <p class="card__hint">Convert legacy <strong>Preeti</strong> font text to Unicode (digitize old documents, forms, articles) — or back the other way.</p>
+
+      <div class="modeswitch" role="tablist">
+        <button type="button" class="modeswitch__btn is-active" id="dirP2U" role="tab">Preeti → Unicode</button>
+        <button type="button" class="modeswitch__btn" id="dirU2P" role="tab">Unicode → Preeti</button>
+      </div>
+
+      <div class="toolgrid">
+        <div class="panel panel--text">
+          <span class="panel__label" id="preetiInLabel">Preeti text (paste here)</span>
+          <textarea id="preetiIn" class="doctext doctext--mono" spellcheck="false"
+                    placeholder="Paste Preeti-encoded text, e.g.  g]kfn"></textarea>
+        </div>
+        <div class="panel panel--text">
+          <span class="panel__label" id="preetiOutLabel">Unicode</span>
+          <textarea id="preetiOut" class="doctext" spellcheck="false" readonly
+                    placeholder="Converted text appears here…"></textarea>
+          <div class="exportbar">
+            <button type="button" class="btn btn--ghost" id="preetiCopy">📋 Copy</button>
+            <button type="button" class="btn btn--ghost" id="preetiSwap">⇄ Use result as input</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="loading" class="loading" hidden>
+      <span class="spinner"></span> <span id="loadingText">Recognizing…</span>
+    </section>
+  </main>
+
+  <footer class="footer">
+    CNN → BiLSTM → CTC baseline · DHCD (46 classes) · runs on CPU ·
+    United Technical College, 2026
+  </footer>
+
+  <script src="{{ url_for('static', filename='translit.js') }}"></script>
+  <script src="{{ url_for('static', filename='preeti.js') }}"></script>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
