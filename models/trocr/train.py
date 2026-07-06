@@ -72,21 +72,28 @@ def configure_model(model, processor):
     return model
 
 
-def run_epoch(model, loader, device, optimizer=None):
+def run_epoch(model, loader, device, optimizer=None, scheduler=None, grad_accum_steps=1):
     train = optimizer is not None
     model.train() if train else model.eval()
     total, n = 0.0, 0
+    n_batches = len(loader)
     torch.set_grad_enabled(train)
-    for batch in loader:
+    if train:
+        optimizer.zero_grad()
+    for step, batch in enumerate(loader):
         pixel_values = batch["pixel_values"].to(device)
         labels = batch["labels"].to(device)
         outputs = model(pixel_values=pixel_values, labels=labels)
         loss = outputs.loss
         if train:
-            optimizer.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
+            (loss / grad_accum_steps).backward()
+            is_last = step == n_batches - 1
+            if (step + 1) % grad_accum_steps == 0 or is_last:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                optimizer.step()
+                if scheduler is not None:
+                    scheduler.step()
+                optimizer.zero_grad()
         total += loss.item()
         n += 1
     torch.set_grad_enabled(True)

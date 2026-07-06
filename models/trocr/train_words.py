@@ -26,6 +26,7 @@ from datetime import datetime
 
 import torch
 from torch.optim import AdamW
+from transformers import get_linear_schedule_with_warmup
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(THIS_DIR, "..", ".."))
@@ -42,7 +43,7 @@ CHECKPOINT_DIR = os.path.join(PROJECT_ROOT, "models", "trocr", "checkpoints_word
 LOG_FILE = os.path.join(PROJECT_ROOT, "logs", "trocr_words_training.csv")
 
 
-def train(labels_csv, epochs, batch_size, lr, num_workers, max_train):
+def train(labels_csv, epochs, batch_size, lr, num_workers, max_train, grad_accum=1):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"[trocr-words] device={device} model={DEFAULT_MODEL} "
           f"batch={batch_size} epochs={epochs} labels={labels_csv}")
@@ -70,13 +71,18 @@ def train(labels_csv, epochs, batch_size, lr, num_workers, max_train):
         print(f"[trocr-words] max_train={max_train}: {len(train_loader)} train batches")
 
     optimizer = AdamW(model.parameters(), lr=lr)
+    steps_per_epoch = math.ceil(len(train_loader) / grad_accum)
+    total_steps = steps_per_epoch * epochs
+    warmup_steps = max(1, int(0.1 * total_steps))
+    scheduler = get_linear_schedule_with_warmup(optimizer, warmup_steps, total_steps)
+    print(f"[trocr-words] grad_accum={grad_accum} warmup_steps={warmup_steps} total_steps={total_steps}")
     best_val, patience, bad = math.inf, 3, 0
 
     with open(LOG_FILE, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["epoch", "train_loss", "val_loss", "timestamp"])
         for epoch in range(1, epochs + 1):
-            tr = run_epoch(model, train_loader, device, optimizer)
+            tr = run_epoch(model, train_loader, device, optimizer, scheduler, grad_accum)
             va = run_epoch(model, val_loader, device, optimizer=None)
             ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             print(f"Epoch {epoch:2d} | train {tr:.4f} | val {va:.4f} | {ts}")
@@ -104,14 +110,18 @@ def main():
     ap.add_argument("--batch-size", type=int,
                     default=int(os.environ.get("TROCR_BATCH_SIZE",
                                                8 if torch.cuda.is_available() else 2)))
-    ap.add_argument("--lr", type=float, default=float(os.environ.get("TROCR_LR", 5e-5)))
+    ap.add_argument("--lr", type=float, default=float(os.environ.get("TROCR_LR", 2e-5)))
     ap.add_argument("--num-workers", type=int,
                     default=int(os.environ.get("TROCR_NUM_WORKERS",
                                                2 if torch.cuda.is_available() else 0)))
     ap.add_argument("--max-train", type=int, default=int(os.environ.get("TROCR_MAX_TRAIN", 0)),
                     help="cap #train samples for a quick CPU sanity run; 0 = all")
+    ap.add_argument("--grad-accum", type=int, default=int(os.environ.get("TROCR_GRAD_ACCUM", 4)),
+                    help="accumulate gradients over N batches to raise the effective batch size "
+                         "without more GPU memory (helps stabilize a small physical batch)")
     args = ap.parse_args()
-    train(args.labels, args.epochs, args.batch_size, args.lr, args.num_workers, args.max_train)
+    train(args.labels, args.epochs, args.batch_size, args.lr, args.num_workers, args.max_train,
+          args.grad_accum)
 
 
 if __name__ == "__main__":
