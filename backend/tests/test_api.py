@@ -150,6 +150,33 @@ def test_legacy_ocr_endpoint_still_works(client):
     assert body["model_used"] == "crnn"
 
 
-def test_history_not_found(client):
+def test_history_get_one_requires_auth(client):
     r = client.get("/history/99999")
+    assert r.status_code == 401
+
+
+def test_history_not_found(client, auth_headers):
+    r = client.get("/history/99999", headers=auth_headers)
+    assert r.status_code == 404
+
+
+def test_history_get_one_is_owner_scoped(client, auth_headers):
+    # Owner uploads a row, then a different user must not be able to read it (IDOR guard).
+    client.post(
+        "/api/document",
+        headers=auth_headers,
+        files={"image": ("owned.png", _sample_png_bytes(), "image/png")},
+        data={"model": "crnn"},
+    )
+    rid = client.get("/history", headers=auth_headers, params={"page": 1, "pageSize": 10}).json()["items"][0]["id"]
+
+    # Owner can read it.
+    assert client.get(f"/history/{rid}", headers=auth_headers).status_code == 200
+
+    # A second, unrelated user gets 404 (no leak), not 200.
+    other_email = f"other_{uuid.uuid4().hex[:8]}@example.com"
+    tok = client.post(
+        "/signup", json={"fullName": "Other", "email": other_email, "password": "password123"}
+    ).json()["accessToken"]
+    r = client.get(f"/history/{rid}", headers={"Authorization": f"Bearer {tok}"})
     assert r.status_code == 404

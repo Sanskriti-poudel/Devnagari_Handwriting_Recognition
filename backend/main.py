@@ -348,8 +348,12 @@ async def ocr(file: UploadFile = File(...), model_name: str = Form("crnn")):
 
 
 @app.get("/history/{result_id}", response_model=OCRResult)
-def get_history_one(result_id: int, db=Depends(get_db)):
-    rec = db.query(RecognizedText).filter(RecognizedText.id == result_id).first()
+def get_history_one(result_id: int, db=Depends(get_db), user: User = Depends(get_current_user)):
+    rec = (
+        db.query(RecognizedText)
+        .filter(RecognizedText.id == result_id, RecognizedText.user_id == user.id)
+        .first()
+    )
     if not rec:
         raise HTTPException(404, "Result not found")
     doc = db.query(DocumentImage).filter(DocumentImage.id == rec.document_id).first()
