@@ -1,4 +1,4 @@
-import { USE_MOCK_API } from '@/services/api'
+import { api, USE_MOCK_API } from '@/services/api'
 import { mockDb } from '@/services/mock/mockDb'
 import { sleep } from '@/lib/utils'
 import type { ActivityItem, DashboardStats } from '@/types'
@@ -61,11 +61,16 @@ export const dashboardService = {
       await sleep(400)
       return computeStats()
     }
-    return computeStats()
+    const { data } = await api.get<DashboardStats>('/dashboard/stats')
+    return data
   },
 
   async getActivity(): Promise<ActivityItem[]> {
-    await sleep(300)
-    return computeActivity()
+    if (USE_MOCK_API) {
+      await sleep(300)
+      return computeActivity()
+    }
+    const { data } = await api.get<ActivityItem[]>('/dashboard/activity')
+    return data
   },
 }
