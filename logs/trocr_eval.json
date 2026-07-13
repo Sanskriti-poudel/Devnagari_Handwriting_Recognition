@@ -1,0 +1,10 @@
+{
+  "checkpoint": "models/trocr/checkpoints",
+  "test_samples": 9200,
+  "accuracy": 0.722,
+  "cer": 0.1761,
+  "wer": 0.3706,
+  "param_count": 61596672,
+  "avg_inference_latency_ms": 15.061,
+  "device": "cuda"
+}
