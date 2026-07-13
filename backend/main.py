@@ -6,14 +6,19 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
 import aiofiles
 
 from config import ALLOWED_EXTENSIONS, MAX_FILE_SIZE_MB, UPLOAD_DIR
-from schemas import OCRResult, ModelInfo, HealthResponse
+from schemas import (
+    OCRResult, ModelInfo, HealthResponse,
+    DocumentOCRResponse, ExportRequest,
+)
 from ml_models.loader import loaded_models, load_all_models
 from services.ocr import run_ocr, run_ocr_pdf
+from services.document import read_upload_to_pages, run_document_ocr, get_cached_doc
+from services.export import build_docx, build_searchable_pdf
 from db import SessionLocal, DocumentImage, RecognizedText, create_tables
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -128,6 +133,63 @@ async def ocr(
         processing_time_ms=elapsed_ms,
         created_at=created_at,
     )
+
+
+@app.post("/document", response_model=DocumentOCRResponse)
+async def document(file: UploadFile = File(...)):
+    """Document mode: a page or multi-page PDF -> editable Devanagari Unicode text.
+
+    Uses the real word-level TrOCR (reads whole lines, including matras /
+    conjuncts / punctuation) when a trained checkpoint is loaded; otherwise
+    falls back to the honest CRNN character-segmentation path.
+    """
+    raw = await file.read()
+    pages, err = read_upload_to_pages(file.filename, raw)
+    if err is not None:
+        raise HTTPException(400, err)
+
+    response, err = run_document_ocr(pages)
+    if err is not None:
+        raise HTTPException(400, err)
+    return response
+
+
+@app.post("/export")
+async def export_document(body: ExportRequest):
+    """Download the recognized text as txt | docx | (searchable) pdf.
+
+    txt/docx use the (possibly user-edited) `text`; pdf rebuilds a searchable
+    PDF from the cached page images + OCR line boxes for `doc_id`.
+    """
+    fmt = (body.format or "").lower()
+
+    if fmt == "txt":
+        return Response(
+            content=body.text.encode("utf-8"),
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="recognized.txt"'},
+        )
+
+    if fmt == "docx":
+        data = build_docx(body.text)
+        return Response(
+            content=data,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": 'attachment; filename="recognized.docx"'},
+        )
+
+    if fmt == "pdf":
+        pages = get_cached_doc(body.doc_id) if body.doc_id else None
+        if not pages:
+            raise HTTPException(410, "This document expired — re-run the scan, then export.")
+        data = build_searchable_pdf(pages)
+        return Response(
+            content=data,
+            media_type="application/pdf",
+            headers={"Content-Disposition": 'attachment; filename="recognized.pdf"'},
+        )
+
+    raise HTTPException(400, "Unknown export format. Use txt, docx or pdf.")
 
 
 @app.get("/history", response_model=list[OCRResult])

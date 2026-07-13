@@ -34,3 +34,30 @@ class ModelInfo(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     models_loaded: list[str]
+
+
+class DocumentPageResult(BaseModel):
+    annotated: Optional[str] = None
+    text: str
+    num_lines: int
+    num_chars: int
+    avg_confidence: float
+
+
+class DocumentOCRResponse(BaseModel):
+    doc_id: str
+    engine: str
+    text: str
+    num_chars: int
+    num_lines: int
+    num_pages: int
+    avg_confidence: float
+    time_ms: float
+    annotated: Optional[str] = None
+    pages: list[DocumentPageResult]
+
+
+class ExportRequest(BaseModel):
+    format: str
+    text: str
+    doc_id: Optional[str] = None

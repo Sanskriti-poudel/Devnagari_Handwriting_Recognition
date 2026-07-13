@@ -17,3 +17,14 @@ export const fetchHistory = (limit = 10) =>
   api.get('/history', { params: { limit } }).then(r => r.data)
 
 export const checkHealth = () => api.get('/health').then(r => r.data)
+
+export const runDocumentOCR = (file) => {
+  const form = new FormData()
+  form.append('file', file)
+  return api.post('/document', form).then(r => r.data)
+}
+
+export const exportDocument = (format, text, docId) =>
+  api
+    .post('/export', { format, text, doc_id: docId }, { responseType: 'blob' })
+    .then(r => r.data)

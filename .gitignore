@@ -8,6 +8,7 @@ Datasets/
 models/crnn/checkpoints/
 models/trocr/checkpoints/
 models/trocr/checkpoints_words/
+models/trocr/checkpoints_words_backup_*/
 __pycache__/
 .ipynb_checkpoints/
 backend/.env

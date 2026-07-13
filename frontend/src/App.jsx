@@ -1,13 +1,17 @@
 import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
-import { fetchModels, runOCR } from './api/client'
+import { fetchModels, runOCR, runDocumentOCR } from './api/client'
 import UploadZone from './components/UploadZone'
 import ImagePreview from './components/ImagePreview'
 import ResultPanel from './components/ResultPanel'
 import ModelSelector from './components/ModelSelector'
+import ModeSwitch from './components/ModeSwitch'
+import DocumentResultPanel from './components/DocumentResultPanel'
+import TextTools from './components/TextTools'
 import './App.css'
 
 export default function App() {
+  const [mode, setMode] = useState('char') // 'char' | 'document'
   const [models, setModels] = useState([])
   const [selectedModel, setSelectedModel] = useState('crnn')
   const [file, setFile] = useState(null)
@@ -15,6 +19,10 @@ export default function App() {
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+
+  const [docResult, setDocResult] = useState(null)
+  const [docId, setDocId] = useState(null)
+  const [docText, setDocText] = useState('')
 
   useEffect(() => {
     fetchModels()
@@ -32,8 +40,22 @@ export default function App() {
   const handleFile = useCallback(f => {
     setFile(f)
     setResult(null)
+    setDocResult(null)
+    setDocId(null)
+    setDocText('')
     setError(null)
     setPreviewUrl(f.type !== 'application/pdf' ? URL.createObjectURL(f) : null)
+  }, [])
+
+  const handleModeChange = useCallback(next => {
+    setMode(next)
+    setFile(null)
+    setPreviewUrl(null)
+    setResult(null)
+    setDocResult(null)
+    setDocId(null)
+    setDocText('')
+    setError(null)
   }, [])
 
   const handleRecognize = async () => {
@@ -41,9 +63,17 @@ export default function App() {
     setLoading(true)
     setError(null)
     setResult(null)
+    setDocResult(null)
     try {
-      const data = await runOCR(file, selectedModel)
-      setResult(data)
+      if (mode === 'document') {
+        const data = await runDocumentOCR(file)
+        setDocResult(data)
+        setDocId(data.doc_id)
+        setDocText(data.text || '')
+      } else {
+        const data = await runOCR(file, selectedModel)
+        setResult(data)
+      }
     } catch (err) {
       const raw = err.response?.data?.detail ?? err.response?.data?.error ?? err.message ?? 'OCR failed'
       const msg = typeof raw === 'string' ? raw : JSON.stringify(raw)
@@ -63,13 +93,19 @@ export default function App() {
 
       <main className="main">
         <div className="card">
-          <ModelSelector
-            models={models}
-            value={selectedModel}
-            onChange={setSelectedModel}
-            disabled={loading}
-          />
+          <ModeSwitch mode={mode} onChange={handleModeChange} disabled={loading} />
         </div>
+
+        {mode === 'char' && (
+          <div className="card">
+            <ModelSelector
+              models={models}
+              value={selectedModel}
+              onChange={setSelectedModel}
+              disabled={loading}
+            />
+          </div>
+        )}
 
         <div className="card upload-row">
           <div className="upload-row__zone">
@@ -93,8 +129,10 @@ export default function App() {
               {loading ? (
                 <>
                   <span className="spinner" aria-hidden="true" />
-                  Processing…
+                  {mode === 'document' ? 'Reading document…' : 'Processing…'}
                 </>
+              ) : mode === 'document' ? (
+                'Read Document'
               ) : (
                 'Recognize Text'
               )}
@@ -108,11 +146,26 @@ export default function App() {
           </div>
         )}
 
-        {result && (
+        {mode === 'char' && result && (
           <div className="card">
             <ResultPanel result={result} />
           </div>
         )}
+
+        {mode === 'document' && docResult && (
+          <div className="card">
+            <DocumentResultPanel
+              result={docResult}
+              docId={docId}
+              text={docText}
+              onTextChange={setDocText}
+            />
+          </div>
+        )}
+
+        <div className="card">
+          <TextTools />
+        </div>
       </main>
 
       <footer className="footer">

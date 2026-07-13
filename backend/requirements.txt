@@ -8,6 +8,8 @@ sqlalchemy
 aiofiles
 python-dotenv
 pdf2image
+pymupdf
+python-docx
 pytest
 httpx
 # Deep learning — install the CPU wheel; for GPU replace with the CUDA variant from pytorch.org
