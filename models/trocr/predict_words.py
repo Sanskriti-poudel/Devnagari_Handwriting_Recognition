@@ -70,29 +70,47 @@ def _to_rgb_pil(image):
     raise TypeError(f"Unsupported image type: {type(image)}")
 
 
+def predict_lines(images, checkpoint_path=None, device=None):
+    """Recognize a BATCH of line/word images in one model.generate() call.
+
+    Sequential per-line generate() calls each pay the same fixed model
+    forward-pass overhead; batching lets a CPU use multiple threads across
+    the batch dimension, which matters a lot for multi-line CPU inference
+    (the common case here — no GPU). Returns a list of
+    {"text": str, "confidence": float}, one per input image, same order.
+    """
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    processor, model = _load(_resolve_checkpoint(checkpoint_path), device)
+
+    if not images:
+        return []
+
+    imgs = [_to_rgb_pil(im) for im in images]
+    pixel_values = processor(images=imgs, return_tensors="pt").pixel_values.to(device)
+    with torch.no_grad():
+        out = model.generate(
+            pixel_values, max_length=MAX_TARGET_LENGTH,
+            output_scores=True, return_dict_in_generate=True,
+        )
+    texts = [t.strip() for t in processor.batch_decode(out.sequences, skip_special_tokens=True)]
+
+    if out.scores:
+        # out.scores: one (batch, vocab) tensor per generated step.
+        per_step_max = [torch.softmax(step, dim=-1).max(dim=-1).values for step in out.scores]
+        confidences = torch.stack(per_step_max, dim=1).mean(dim=1).tolist()
+    else:
+        confidences = [0.0] * len(imgs)
+
+    return [{"text": text, "confidence": round(float(conf), 4)} for text, conf in zip(texts, confidences)]
+
+
 def predict_line(image, checkpoint_path=None, device=None):
     """Recognize the text in a single line/word image.
 
     Returns {"text": str, "confidence": float}; confidence is the mean per-step
     max-softmax probability over the generated tokens.
     """
-    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-    processor, model = _load(_resolve_checkpoint(checkpoint_path), device)
-
-    img = _to_rgb_pil(image)
-    pixel_values = processor(images=img, return_tensors="pt").pixel_values.to(device)
-    with torch.no_grad():
-        out = model.generate(
-            pixel_values, max_length=MAX_TARGET_LENGTH,
-            output_scores=True, return_dict_in_generate=True,
-        )
-    text = processor.batch_decode(out.sequences, skip_special_tokens=True)[0].strip()
-    if out.scores:
-        step_probs = [torch.softmax(s[0], dim=-1).max().item() for s in out.scores]
-        confidence = float(np.mean(step_probs)) if step_probs else 0.0
-    else:
-        confidence = 0.0
-    return {"text": text, "confidence": round(confidence, 4)}
+    return predict_lines([image], checkpoint_path=checkpoint_path, device=device)[0]
 
 
 def predict_page(image, checkpoint_path=None, device=None):
@@ -114,11 +132,12 @@ def predict_page(image, checkpoint_path=None, device=None):
         raise TypeError(f"Unsupported image type: {type(image)}")
 
     boxes = segment_line_boxes(bgr)
-    results = []
-    for (x, y, w, h) in boxes:
-        crop = bgr[y:y + h, x:x + w]
-        r = predict_line(crop, checkpoint_path=checkpoint_path, device=device)
-        results.append({"box": (x, y, w, h), "text": r["text"], "confidence": r["confidence"]})
+    crops = [bgr[y:y + h, x:x + w] for (x, y, w, h) in boxes]
+    line_results = predict_lines(crops, checkpoint_path=checkpoint_path, device=device)
+    results = [
+        {"box": box, "text": r["text"], "confidence": r["confidence"]}
+        for box, r in zip(boxes, line_results)
+    ]
 
     # annotate() expects a list-of-lines-of-boxes; wrap each line box as its own line
     annotated = annotate(bgr, [[b] for b in boxes])
