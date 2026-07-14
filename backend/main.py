@@ -31,7 +31,7 @@ from schemas import (
     ConfidenceTrendPoint,
     ActivityItemOut,
 )
-from models.loader import loaded_models, load_all_models
+from ml_models.loader import loaded_models, load_all_models
 from services.ocr import run_ocr, run_ocr_pdf
 from db import SessionLocal, DocumentImage, RecognizedText, User, create_tables
 from deps import get_db, get_current_user, get_optional_user

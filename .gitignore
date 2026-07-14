@@ -12,3 +12,4 @@ __pycache__/
 backend/.env
 backend/uploads/
 backend/ocr_results.db
+backend/server.log
