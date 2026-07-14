@@ -62,9 +62,12 @@ def run_ocr_pdf(pdf_path: str, model_name: str) -> list[dict]:
     pages = convert_from_path(pdf_path)
     results = []
     for i, page_img in enumerate(pages):
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+        tmp.close()
+        try:
             page_img.save(tmp.name)
             text, conf = run_ocr(tmp.name, model_name)
+        finally:
             os.unlink(tmp.name)
         results.append({"page": i + 1, "text": text, "confidence": conf})
     return results
