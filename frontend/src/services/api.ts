@@ -6,7 +6,10 @@ export const USE_MOCK_API = import.meta.env.VITE_USE_MOCK_API !== 'false'
 
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
-  timeout: 30_000,
+  // CPU-only OCR inference (no GPU) can genuinely take minutes for a
+  // multi-line image or multi-page PDF — a short timeout reads as
+  // "Recognition failed" even though the backend is still working.
+  timeout: 300_000,
 })
 
 api.interceptors.request.use((config) => {
