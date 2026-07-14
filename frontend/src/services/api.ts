@@ -21,9 +21,18 @@ api.interceptors.request.use((config) => {
 
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    const message =
-      error.response?.data?.error || error.response?.data?.message || error.message || 'Something went wrong.'
+  async (error) => {
+    let data = error.response?.data
+    // responseType: 'blob' requests also receive Blob error bodies — the
+    // FastAPI HTTPException detail is inside, not in error.message.
+    if (data instanceof Blob && data.type.includes('json')) {
+      try {
+        data = JSON.parse(await data.text())
+      } catch {
+        // leave data as-is; falls through to error.message below
+      }
+    }
+    const message = data?.error || data?.detail || data?.message || error.message || 'Something went wrong.'
     return Promise.reject(new Error(message))
   }
 )

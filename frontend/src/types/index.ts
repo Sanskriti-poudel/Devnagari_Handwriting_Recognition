@@ -23,6 +23,29 @@ export interface OcrResult {
   modelSimulated?: boolean
 }
 
+export interface DocumentPageResult {
+  annotated?: string
+  text: string
+  numLines: number
+  numChars: number
+  avgConfidence: number
+}
+
+export interface DocumentOcrResponse {
+  docId: string
+  engine: string
+  text: string
+  numChars: number
+  numLines: number
+  numPages: number
+  avgConfidence: number
+  timeMs: number
+  annotated?: string
+  pages: DocumentPageResult[]
+}
+
+export type ExportFormat = 'txt' | 'docx' | 'pdf'
+
 export interface HistoryFilters {
   search: string
   model: OcrModelId | 'all'
