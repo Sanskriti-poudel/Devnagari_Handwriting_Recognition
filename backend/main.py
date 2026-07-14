@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
 import aiofiles
 
@@ -17,6 +17,8 @@ from config import ALLOWED_EXTENSIONS, MAX_FILE_SIZE_MB, UPLOAD_DIR, CORS_ORIGIN
 from schemas import (
     OCRResult,
     DocumentOCRResult,
+    DocumentOCRResponse,
+    ExportRequest,
     SignupBody,
     LoginBody,
     ForgotPasswordBody,
@@ -31,8 +33,10 @@ from schemas import (
     ConfidenceTrendPoint,
     ActivityItemOut,
 )
-from models.loader import loaded_models, load_all_models
+from ml_models.loader import loaded_models, load_all_models
 from services.ocr import run_ocr, run_ocr_pdf
+from services.document import read_upload_to_pages, run_document_ocr, get_cached_doc
+from services.export import build_docx, build_searchable_pdf
 from db import SessionLocal, DocumentImage, RecognizedText, User, create_tables
 from deps import get_db, get_current_user, get_optional_user
 from security import hash_password, verify_password, create_access_token
@@ -277,6 +281,66 @@ async def api_document(
         time_ms=elapsed_ms,
         model_simulated=model_simulated,
     )
+
+
+@app.post("/api/document/pages", response_model=DocumentOCRResponse)
+async def api_document_pages(file: UploadFile = File(...)):
+    """Multi-page document OCR with per-line boxes, feeding /api/export.
+
+    Uses the real word-level TrOCR (reads whole lines, including matras /
+    conjuncts / punctuation) when a trained checkpoint is loaded; otherwise
+    falls back to the honest CRNN character-segmentation path. Kept separate
+    from /api/document (which persists a single flattened result to history)
+    since export needs the per-page images + line boxes this returns.
+    """
+    raw = await file.read()
+    pages, err = read_upload_to_pages(file.filename, raw)
+    if err is not None:
+        raise HTTPException(400, err)
+
+    response, err = run_document_ocr(pages)
+    if err is not None:
+        raise HTTPException(400, err)
+    return response
+
+
+@app.post("/api/export")
+async def api_export(body: ExportRequest):
+    """Download recognized text as txt | docx | (searchable) pdf.
+
+    txt/docx use the (possibly user-edited) `text`; pdf rebuilds a searchable
+    PDF from the cached page images + OCR line boxes for `doc_id` (returned
+    by /api/document/pages).
+    """
+    fmt = (body.format or "").lower()
+
+    if fmt == "txt":
+        return Response(
+            content=body.text.encode("utf-8"),
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="recognized.txt"'},
+        )
+
+    if fmt == "docx":
+        data = build_docx(body.text)
+        return Response(
+            content=data,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": 'attachment; filename="recognized.docx"'},
+        )
+
+    if fmt == "pdf":
+        pages = get_cached_doc(body.doc_id) if body.doc_id else None
+        if not pages:
+            raise HTTPException(410, "This document expired — re-run the scan, then export.")
+        data = build_searchable_pdf(pages)
+        return Response(
+            content=data,
+            media_type="application/pdf",
+            headers={"Content-Disposition": 'attachment; filename="recognized.pdf"'},
+        )
+
+    raise HTTPException(400, "Unknown export format. Use txt, docx or pdf.")
 
 
 @app.get("/api/random")
