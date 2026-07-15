@@ -92,6 +92,14 @@ def train(labels_csv, epochs, batch_size, lr, num_workers, max_train, grad_accum
                 best_val, bad = va, 0
                 model.save_pretrained(CHECKPOINT_DIR)
                 processor.save_pretrained(CHECKPOINT_DIR)
+                # processor.save_pretrained() alone has been observed to skip
+                # writing a standalone preprocessor_config.json for this
+                # composite (image+text) processor on some transformers
+                # versions, breaking TrOCRProcessor.from_pretrained() on
+                # reload with "Can't load image processor ... make sure ...
+                # contains a preprocessor_config.json file". Save it
+                # explicitly too so reload never depends on that quirk.
+                processor.image_processor.save_pretrained(CHECKPOINT_DIR)
                 print(f"  [checkpoint] {CHECKPOINT_DIR}")
             else:
                 bad += 1
