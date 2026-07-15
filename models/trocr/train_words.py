@@ -33,7 +33,9 @@ PROJECT_ROOT = os.path.abspath(os.path.join(THIS_DIR, "..", ".."))
 sys.path.insert(0, THIS_DIR)
 sys.path.insert(0, PROJECT_ROOT)
 
-from transformers import TrOCRProcessor, VisionEncoderDecoderModel
+from transformers import (
+    TrOCRProcessor, VisionEncoderDecoderModel, RobertaTokenizer, ViTImageProcessor,
+)
 from train import configure_model, run_epoch  # reuse loop + special-token config
 from dataset_words import get_word_dataloaders, MAX_TARGET_LENGTH
 
@@ -50,7 +52,16 @@ def train(labels_csv, epochs, batch_size, lr, num_workers, max_train, grad_accum
     os.makedirs(CHECKPOINT_DIR, exist_ok=True)
     os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 
-    processor = TrOCRProcessor.from_pretrained(DEFAULT_MODEL)
+    # TrOCRProcessor.from_pretrained(DEFAULT_MODEL) fails on current transformers
+    # (5.x dropped the legacy slow-tokenizer path entirely, and this 2021-era hub
+    # checkpoint has no fast tokenizer.json): "ValueError: Couldn't instantiate
+    # the backend tokenizer ... need sentencepiece or tiktoken" — misleading,
+    # since installing either doesn't fix it. Load the tokenizer/image processor
+    # directly (bypasses the broken Auto/Processor dispatch) and assemble
+    # manually; both classes still load this old checkpoint format fine.
+    tokenizer = RobertaTokenizer.from_pretrained(DEFAULT_MODEL)
+    image_processor = ViTImageProcessor.from_pretrained(DEFAULT_MODEL)
+    processor = TrOCRProcessor(image_processor=image_processor, tokenizer=tokenizer)
     model = VisionEncoderDecoderModel.from_pretrained(DEFAULT_MODEL).to(device)
     model = configure_model(model, processor)
     # configure_model sets max_length=8 (single glyph); a phrase needs much more.
