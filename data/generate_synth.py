@@ -192,10 +192,23 @@ _DEVA_FONT_KEYS = [
 ]
 
 
+THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+_BUNDLED_FONT_DIR = os.path.abspath(os.path.join(THIS_DIR, "..", "assets", "fonts_devanagari"))
+
+
 def default_font_paths():
-    """Find Devanagari fonts on the current OS (Windows -> Nirmala/Mangal;
-    Linux/mac -> any installed Devanagari/Lohit/Noto-Devanagari .ttf/.otf)."""
+    """Find Devanagari fonts to render from. Always includes the fonts bundled
+    in assets/fonts_devanagari (checked into the repo — Noto Sans/Serif
+    Devanagari, Hind, Mukta, Tiro Devanagari Hindi, Baloo 2, Khand — 8 distinct
+    typefaces so the model doesn't overfit to a couple of Windows system
+    fonts), plus whatever the OS already has installed (Windows -> Nirmala/
+    Mangal; Linux/mac -> any installed Devanagari/Lohit/Noto-Devanagari
+    .ttf/.otf, e.g. after `apt-get install fonts-deva fonts-lohit-deva`)."""
     paths = []
+    if os.path.isdir(_BUNDLED_FONT_DIR):
+        paths += sorted(glob.glob(os.path.join(_BUNDLED_FONT_DIR, "*.ttf")))
+        paths += sorted(glob.glob(os.path.join(_BUNDLED_FONT_DIR, "*.otf")))
+
     if os.name == "nt":  # Windows
         win = "C:/Windows/Fonts"
         for p in ("Nirmala.ttf", "NirmalaB.ttf", "NirmalaS.ttf", "mangal.ttf", "Mangal.ttf"):
@@ -283,13 +296,52 @@ def _shear(img, rng, max_shear=0.18):
     )
 
 
+def _wave_warp(img, rng, axis, amp_range=(1.0, 3.5), freq_range=(1.2, 3.5)):
+    """Sinusoidal per-line displacement (numpy only, no scipy) — mimics the
+    wavering baseline and uneven stroke height of real handwriting, which a
+    perfectly-rasterized font never has. axis='row' shifts each row
+    horizontally (wavy baseline); axis='col' shifts each column vertically
+    (letters bouncing above/below the line)."""
+    arr = np.asarray(img).astype(np.uint8)
+    H, W = arr.shape
+    out = np.full_like(arr, 255)
+    amp = rng.uniform(*amp_range)
+    freq = rng.uniform(*freq_range)
+    phase = rng.uniform(0, 2 * math.pi)
+    n = H if axis == "row" else W
+    for i in range(n):
+        shift = int(round(amp * math.sin(2 * math.pi * freq * i / n + phase)))
+        if shift == 0:
+            line = arr[i, :] if axis == "row" else arr[:, i]
+            (out[i, :] if axis == "row" else out[:, i])[:] = line
+            continue
+        if axis == "row":
+            if shift > 0:
+                out[i, shift:] = arr[i, :W - shift]
+            else:
+                out[i, :W + shift] = arr[i, -shift:]
+        else:
+            if shift > 0:
+                out[shift:, i] = arr[:H - shift, i]
+            else:
+                out[:H + shift, i] = arr[-shift:, i]
+    return Image.fromarray(out)
+
+
 def augment(img, rng):
-    """Light geometric + photometric distortion to look less font-perfect."""
+    """Geometric + photometric distortion to look less font-perfect —
+    approximates real pen-stroke variation (wavy baseline, jittery stroke
+    height, slant, blur, sensor/paper noise) instead of a crisp rasterized
+    font, which is most of the train/real-photo domain gap."""
     if rng.random() < 0.7:
         img = _shear(img, rng)
     if rng.random() < 0.7:
         img = img.rotate(rng.uniform(-4, 4), resample=Image.BILINEAR,
                          expand=True, fillcolor=255)
+    if rng.random() < 0.6:
+        img = _wave_warp(img, rng, axis="row")
+    if rng.random() < 0.5:
+        img = _wave_warp(img, rng, axis="col")
     if rng.random() < 0.5:
         img = img.filter(ImageFilter.GaussianBlur(rng.uniform(0.4, 1.1)))
 
