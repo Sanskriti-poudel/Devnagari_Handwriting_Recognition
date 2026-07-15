@@ -40,9 +40,17 @@ Point `CRNN_MODEL_PATH` at the **absolute path** to the real weights in the main
 CRNN_MODEL_PATH=C:/Users/<you>/.../Devnagari_Handwriting_Recognition/kaggle_output/artifacts/best_model.pth
 ```
 
-Leave `TRANSFORMER_MODEL_PATH` as-is — this backend branch doesn't have the
-word-TrOCR integration wired in yet, so it will report the transformer model as
-"degraded" (expected, not an error).
+Point `TRANSFORMER_MODEL_PATH` at the same absolute path (worktree-relative
+paths won't resolve here either):
+
+```
+TRANSFORMER_MODEL_PATH=C:/Users/<you>/.../Devnagari_Handwriting_Recognition/models/trocr/checkpoints_words
+```
+
+The word-TrOCR integration is wired in on this branch too — it just needs the
+checkpoint path pointed at the real weights, same as CRNN above. Leave it
+unset and `/models` will report the transformer as "degraded" (mocked)
+instead of "active".
 
 Start it:
 
@@ -81,10 +89,13 @@ Open **http://localhost:5173**.
 ## 4. Using the app
 
 - This backend has real auth (JWT) — sign up / log in before OCR features work.
-- Upload a Devanagari handwriting image and run recognition — it hits the real
-  trained CRNN model.
-- TrOCR/transformer model will show as "degraded" — that's expected on this
-  branch; CRNN is the only real model wired in here.
+- Upload a Devanagari handwriting image, pick a model, and run recognition —
+  both CRNN and Transformer (TrOCR) hit real trained models when
+  `TRANSFORMER_MODEL_PATH` is set (see step 2).
+- If `TRANSFORMER_MODEL_PATH` doesn't resolve, `/models` reports it as
+  "degraded" and `/api/document` transparently falls back to CRNN, flagging
+  the result as `model_simulated` in the API response (surfaced in the UI as
+  a "Simulated" badge).
 
 ## Troubleshooting
 
