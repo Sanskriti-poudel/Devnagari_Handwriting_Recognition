@@ -22,18 +22,20 @@ interface DocumentApiResponse {
   avg_confidence: number
   time_ms: number
   annotated?: string
+  model_simulated: boolean
 }
 
 export const ocrService = {
   /**
-   * Runs the real, trained CRNN backend (webapp/server.py: POST /api/document) on an
-   * uploaded image or PDF. The backend only ships one recognizer today, so selecting
-   * "Transformer" in the UI still calls the same real model — the result is flagged
-   * `modelSimulated` so the UI can be upfront about it instead of pretending.
+   * Runs the real, trained backend (POST /api/document) on an uploaded image or PDF,
+   * passing the user's selected model. The backend reports `model_simulated` when the
+   * requested model isn't actually loaded (falls back to CRNN) — trust that flag rather
+   * than assuming based on which model was requested.
    */
   async recognize(file: File, model: OcrModelId, onUploadProgress?: (percent: number) => void): Promise<OcrResult> {
     const formData = new FormData()
     formData.append('image', file)
+    formData.append('model', model)
 
     const { data } = await api.post<DocumentApiResponse>('/api/document', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
@@ -57,7 +59,7 @@ export const ocrService = {
       timeMs: data.time_ms,
       createdAt: new Date().toISOString(),
       status: 'completed',
-      modelSimulated: model === 'transformer',
+      modelSimulated: data.model_simulated,
     }
 
     mockDb.addHistory(result)
