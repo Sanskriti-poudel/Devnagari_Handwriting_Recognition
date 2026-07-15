@@ -11,6 +11,7 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Dep
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
+from starlette.concurrency import run_in_threadpool
 import aiofiles
 
 from config import ALLOWED_EXTENSIONS, MAX_FILE_SIZE_MB, UPLOAD_DIR, CORS_ORIGINS
@@ -239,11 +240,11 @@ async def api_document(
     is_pdf = ext == "pdf"
     start = time.time()
     if is_pdf:
-        pages = run_ocr_pdf(save_path, model)
+        pages = await run_in_threadpool(run_ocr_pdf, save_path, model)
         text = "\n\n".join(p["text"] for p in pages)
         confidence = sum(p["confidence"] for p in pages) / len(pages) if pages else 0.0
     else:
-        text, confidence = run_ocr(save_path, model)
+        text, confidence = await run_in_threadpool(run_ocr, save_path, model)
     elapsed_ms = round((time.time() - start) * 1000, 2)
 
     num_chars = len(text.replace("\n", ""))
@@ -298,7 +299,7 @@ async def api_document_pages(file: UploadFile = File(...)):
     if err is not None:
         raise HTTPException(400, err)
 
-    response, err = run_document_ocr(pages)
+    response, err = await run_in_threadpool(run_document_ocr, pages)
     if err is not None:
         raise HTTPException(400, err)
     return response
@@ -371,11 +372,11 @@ async def ocr(file: UploadFile = File(...), model_name: str = Form("crnn")):
 
     start = time.time()
     if ext == "pdf":
-        pages = run_ocr_pdf(save_path, model_name)
+        pages = await run_in_threadpool(run_ocr_pdf, save_path, model_name)
         result_text = "\n\n".join(f"[Page {p['page']}]\n{p['text']}" for p in pages)
         confidence = sum(p["confidence"] for p in pages) / len(pages) if pages else 0.0
     else:
-        result_text, confidence = run_ocr(save_path, model_name)
+        result_text, confidence = await run_in_threadpool(run_ocr, save_path, model_name)
     elapsed_ms = round((time.time() - start) * 1000, 2)
 
     db = SessionLocal()
