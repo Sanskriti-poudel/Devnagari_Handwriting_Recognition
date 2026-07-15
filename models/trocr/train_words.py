@@ -45,8 +45,27 @@ CHECKPOINT_DIR = os.path.join(PROJECT_ROOT, "models", "trocr", "checkpoints_word
 LOG_FILE = os.path.join(PROJECT_ROOT, "logs", "trocr_words_training.csv")
 
 
+def _usable_cuda_device():
+    """torch.cuda.is_available() only checks that a CUDA driver/runtime is
+    present — it does NOT check that the installed PyTorch build actually
+    ships kernels for this GPU's compute capability. Kaggle sometimes hands
+    out older Pascal cards (P100, sm_60) that current PyTorch wheels have
+    dropped support for, which crashes deep inside the first real op with
+    'CUDA error: no kernel image is available for execution on the device'
+    instead of failing here where it's cheap to catch and fall back."""
+    if not torch.cuda.is_available():
+        return False
+    try:
+        torch.zeros(1, device="cuda") + 1
+        return True
+    except RuntimeError as exc:
+        print(f"[trocr-words] GPU present but unusable with this PyTorch build "
+              f"({exc}) — falling back to CPU")
+        return False
+
+
 def train(labels_csv, epochs, batch_size, lr, num_workers, max_train, grad_accum=1):
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = "cuda" if _usable_cuda_device() else "cpu"
     print(f"[trocr-words] device={device} model={DEFAULT_MODEL} "
           f"batch={batch_size} epochs={epochs} labels={labels_csv}")
     os.makedirs(CHECKPOINT_DIR, exist_ok=True)
