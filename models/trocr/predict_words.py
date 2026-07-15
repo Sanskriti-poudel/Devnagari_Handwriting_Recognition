@@ -90,7 +90,7 @@ def predict_lines(images, checkpoint_path=None, device=None):
     with torch.no_grad():
         out = model.generate(
             pixel_values, max_length=MAX_TARGET_LENGTH,
-            output_scores=True, return_dict_in_generate=True,
+            output_scores=True, return_dict_in_generate=True, use_cache=True,
         )
     texts = [t.strip() for t in processor.batch_decode(out.sequences, skip_special_tokens=True)]
 

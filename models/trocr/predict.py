@@ -53,6 +53,12 @@ def _load(checkpoint_path, device):
     processor = TrOCRProcessor.from_pretrained(checkpoint_path)
     model = VisionEncoderDecoderModel.from_pretrained(checkpoint_path).to(device)
     model.eval()
+    # Checkpoints save use_cache=False (needed for training-time gradient
+    # checkpointing); without it, generate() recomputes the whole decoded
+    # sequence from scratch every step — quadratic and orders of magnitude
+    # slower on CPU. Inference always wants KV-caching on.
+    model.config.use_cache = True
+    model.generation_config.use_cache = True
     return processor, model
 
 
