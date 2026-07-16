@@ -72,7 +72,7 @@ export function SignupForm() {
           <Input
             id="fullName"
             autoComplete="name"
-            placeholder="Savyata Poudel"
+            placeholder="John Doe"
             icon={<User className="h-4 w-4" />}
             error={!!errors.fullName}
             {...register('fullName')}

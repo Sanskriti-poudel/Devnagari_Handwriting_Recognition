@@ -23,12 +23,18 @@ export interface OcrResult {
   modelSimulated?: boolean
 }
 
+export interface LineBox {
+  box: [number, number, number, number]  // (x, y, w, h)
+  text: string
+}
+
 export interface DocumentPageResult {
   annotated?: string
   text: string
   numLines: number
   numChars: number
   avgConfidence: number
+  lines?: LineBox[]  // per-line boxes for DOCX layout export
 }
 
 export interface DocumentOcrResponse {

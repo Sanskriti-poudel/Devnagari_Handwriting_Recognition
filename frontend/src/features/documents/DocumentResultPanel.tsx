@@ -72,7 +72,11 @@ export function DocumentResultPanel({ result, text, onTextChange }: DocumentResu
     }
     setExporting(format)
     try {
-      const blob = await documentService.exportDocument(format, text, result.docId)
+      // For DOCX: flatten all page lines to preserve layout
+      const lineData = format === 'docx' && result.pages
+        ? result.pages.flatMap(p => p.lines || [])
+        : undefined
+      const blob = await documentService.exportDocument(format, text, result.docId, lineData)
       downloadBlob(blob, `recognized.${format}`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Export failed')

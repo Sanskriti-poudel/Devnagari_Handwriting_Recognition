@@ -29,8 +29,8 @@ function uid(prefix = 'id') {
 
 const DEMO_USER: StoredUser = {
   id: 'user_demo',
-  fullName: 'Savyata Poudel',
-  email: 'savyata@example.com',
+  fullName: 'John Doe',
+  email: 'johndoe@example.com',
   password: 'password123',
   university: 'Tribhuvan University',
   role: 'Final Year Student',

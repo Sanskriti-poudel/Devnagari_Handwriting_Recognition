@@ -3,11 +3,14 @@ import { ocrService } from '@/services/ocr.service'
 import { documentService } from '@/services/document.service'
 import type { OcrModelId } from '@/types'
 
-export function useRecognize(onUploadProgress?: (percent: number) => void) {
+export function useRecognize(
+  onUploadProgress?: (percent: number) => void,
+  onUploadDone?: () => void,
+) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ file, model }: { file: File; model: OcrModelId }) =>
-      ocrService.recognize(file, model, onUploadProgress),
+      ocrService.recognize(file, model, onUploadProgress, onUploadDone),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['history'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })

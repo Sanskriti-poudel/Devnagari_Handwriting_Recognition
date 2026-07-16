@@ -32,7 +32,12 @@ export const ocrService = {
    * requested model isn't actually loaded (falls back to CRNN) — trust that flag rather
    * than assuming based on which model was requested.
    */
-  async recognize(file: File, model: OcrModelId, onUploadProgress?: (percent: number) => void): Promise<OcrResult> {
+  async recognize(
+    file: File,
+    model: OcrModelId,
+    onUploadProgress?: (percent: number) => void,
+    onUploadDone?: () => void,
+  ): Promise<OcrResult> {
     const formData = new FormData()
     formData.append('image', file)
     formData.append('model', model)
@@ -40,7 +45,11 @@ export const ocrService = {
     const { data } = await api.post<DocumentApiResponse>('/api/document', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress: (evt) => {
-        if (onUploadProgress && evt.total) onUploadProgress(Math.round((evt.loaded / evt.total) * 100))
+        if (onUploadProgress && evt.total) {
+          onUploadProgress(Math.round((evt.loaded / evt.total) * 100))
+          // Notify parent when upload HTTP phase is complete (inference still running)
+          if (evt.loaded >= evt.total && onUploadDone) onUploadDone()
+        }
       },
     })
 

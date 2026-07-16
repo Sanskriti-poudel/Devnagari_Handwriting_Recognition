@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { Sparkles } from 'lucide-react'
 import { Breadcrumb } from '@/components/ui/Breadcrumb'
@@ -33,13 +33,18 @@ export default function OcrPage() {
   const [docResult, setDocResult] = useState<DocumentOcrResponse | null>(null)
   const [docText, setDocText] = useState('')
 
-  const { mutate, isPending, error, reset } = useRecognize(setUploadProgress)
+  // Refs to track phase without re-render churn
+  const uploadDoneRef = useRef(false)
+
+  const { mutate, isPending, error, reset } = useRecognize(setUploadProgress, () => { uploadDoneRef.current = true })
   const { mutate: mutateDoc, isPending: isDocPending, error: docError, reset: resetDoc } = useRecognizeDocument()
 
   const handleFileSelect = (selected: File) => {
     setFile(selected)
     setResult(null)
     setDocResult(null)
+    setUploadProgress(0)
+    uploadDoneRef.current = false
     reset()
     resetDoc()
   }
@@ -50,12 +55,15 @@ export default function OcrPage() {
     setDocResult(null)
     setDocText('')
     setUploadProgress(0)
+    uploadDoneRef.current = false
     reset()
     resetDoc()
   }
 
   const handleRecognize = () => {
     if (!file) return
+    setUploadProgress(0)
+    uploadDoneRef.current = false
     if (isPdfFile(file)) {
       mutateDoc(
         { file, model },
@@ -63,16 +71,19 @@ export default function OcrPage() {
       )
       return
     }
-    setUploadProgress(0)
     mutate(
       { file, model },
-      {
-        onSuccess: (data) => setResult(data),
-      }
+      { onSuccess: (data) => setResult(data) }
     )
   }
 
   const isBusy = isPending || isDocPending
+
+  // Upload finished but inference still running → show "recognizing" state
+  // uploadProgress drops back to 0 when upload ends; we detect this via the ref
+  // (the ref is set to true by onUploadProgress at ~100%, then cleared on completion)
+  const showRecognizing = isBusy && uploadProgress === 0 && uploadDoneRef.current
+
   const activeError = error || docError
 
   return (
@@ -82,7 +93,7 @@ export default function OcrPage() {
           <Breadcrumb items={[{ label: 'OCR' }]} />
           <h1 className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">Recognize Handwriting</h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Upload a handwritten Devanagari image or PDF and let the AI convert it to Unicode text.
+            Upload a handwritten Devnagari image or PDF and let the AI convert it to Unicode text.
           </p>
         </div>
 
@@ -100,13 +111,39 @@ export default function OcrPage() {
               </Card>
             )}
 
-            {isBusy && (
+            {/* Upload progress — only meaningful during file upload to server */}
+            {isBusy && uploadProgress > 0 && (
               <Card>
                 <div className="mb-1.5 flex items-center justify-between text-xs font-medium text-slate-500">
-                  <span>Uploading &amp; recognizing…</span>
+                  <span>Uploading…</span>
                   <span>{uploadProgress}%</span>
                 </div>
-                <Progress value={uploadProgress || 8} />
+                <Progress value={uploadProgress} />
+              </Card>
+            )}
+
+            {/* Server-side inference in progress — shown after upload finishes */}
+            {showRecognizing && (
+              <Card>
+                <div className="flex items-center gap-3 py-1">
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
+                    className="h-4 w-4 rounded-full border-2 border-slate-400 border-t-transparent shrink-0"
+                  />
+                  <div className="text-xs text-slate-500">
+                    <span className="font-medium text-slate-700 dark:text-slate-300">
+                      {model === 'transformer' ? 'TrOCR (word-level)' : 'CRNN (character-level)'}
+                    </span>
+                    {' '}— recognizing on server…
+                    <br />
+                    <span className="text-slate-400">
+                      {model === 'transformer'
+                        ? '~30s–3min on CPU for images'
+                        : '~1–5s on CPU'}
+                    </span>
+                  </div>
+                </div>
               </Card>
             )}
 

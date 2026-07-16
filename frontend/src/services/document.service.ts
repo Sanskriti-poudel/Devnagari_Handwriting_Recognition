@@ -1,5 +1,5 @@
 import { api } from '@/services/api'
-import type { DocumentOcrResponse, DocumentPageResult, ExportFormat, OcrModelId } from '@/types'
+import type { DocumentOcrResponse, DocumentPageResult, ExportFormat, LineBox, OcrModelId } from '@/types'
 
 interface DocumentPageResultRaw {
   annotated?: string
@@ -63,10 +63,14 @@ export const documentService = {
     return mapResponse(data)
   },
 
-  async exportDocument(format: ExportFormat, text: string, docId?: string): Promise<Blob> {
+  /**
+   * Export recognized text to txt | docx | pdf.
+   * For docx, optionally pass page lines to enable layout-preserving table output.
+   */
+  async exportDocument(format: ExportFormat, text: string, docId?: string, lines?: LineBox[]): Promise<Blob> {
     const { data } = await api.post(
       '/api/export',
-      { format, text, doc_id: docId },
+      { format, text, doc_id: docId, lines },
       { responseType: 'blob' }
     )
     return data as Blob

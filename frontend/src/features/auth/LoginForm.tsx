@@ -119,10 +119,6 @@ export function LoginForm() {
             Sign up
           </Link>
         </p>
-
-        <p className="text-center text-xs text-slate-400">
-          Demo account: <span className="font-mono">savyata@example.com</span> / <span className="font-mono">password123</span>
-        </p>
       </form>
     </motion.div>
   )
