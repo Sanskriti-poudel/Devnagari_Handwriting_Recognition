@@ -18,6 +18,8 @@ export const fetchHistory = (limit = 10) =>
 
 export const checkHealth = () => api.get('/health').then(r => r.data)
 
+export const fetchRandom = () => api.get('/random').then(r => r.data)
+
 export const runDocumentOCR = (file) => {
   const form = new FormData()
   form.append('file', file)

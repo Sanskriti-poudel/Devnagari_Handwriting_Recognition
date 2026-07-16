@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
-import { fetchModels, runOCR, runDocumentOCR } from './api/client'
+import { fetchModels, runOCR, runDocumentOCR, fetchRandom } from './api/client'
 import UploadZone from './components/UploadZone'
 import ImagePreview from './components/ImagePreview'
 import ResultPanel from './components/ResultPanel'
@@ -24,6 +24,10 @@ export default function App() {
   const [docId, setDocId] = useState(null)
   const [docText, setDocText] = useState('')
 
+  // Random sample state (for demo "Try example" button)
+  const [randomSample, setRandomSample] = useState(null)
+  const [tryingExample, setTryingExample] = useState(false)
+
   useEffect(() => {
     fetchModels()
       .then(setModels)
@@ -44,6 +48,7 @@ export default function App() {
     setDocId(null)
     setDocText('')
     setError(null)
+    setRandomSample(null)
     setPreviewUrl(f.type !== 'application/pdf' ? URL.createObjectURL(f) : null)
   }, [])
 
@@ -56,6 +61,7 @@ export default function App() {
     setDocId(null)
     setDocText('')
     setError(null)
+    setRandomSample(null)
   }, [])
 
   const handleRecognize = async () => {
@@ -64,6 +70,7 @@ export default function App() {
     setError(null)
     setResult(null)
     setDocResult(null)
+    setRandomSample(null)
     try {
       if (mode === 'document') {
         const data = await runDocumentOCR(file)
@@ -84,6 +91,26 @@ export default function App() {
     }
   }
 
+  const handleTryExample = async () => {
+    setTryingExample(true)
+    setError(null)
+    setResult(null)
+    setDocResult(null)
+    setFile(null)
+    setPreviewUrl(null)
+    setRandomSample(null)
+    try {
+      const data = await fetchRandom()
+      // Build a fake OCRResult so ResultPanel can display it
+      setRandomSample(data)
+    } catch (err) {
+      const raw = err.response?.data?.detail ?? err.response?.data?.error ?? err.message ?? 'Failed to load example'
+      toast.error(raw)
+    } finally {
+      setTryingExample(false)
+    }
+  }
+
   return (
     <div className="app">
       <header className="header">
@@ -97,23 +124,52 @@ export default function App() {
         </div>
 
         {mode === 'char' && (
-          <div className="card">
-            <ModelSelector
-              models={models}
-              value={selectedModel}
-              onChange={setSelectedModel}
-              disabled={loading}
-            />
+          <div className="card char-actions">
+            <div className="char-actions__selector">
+              <ModelSelector
+                models={models}
+                value={selectedModel}
+                onChange={setSelectedModel}
+                disabled={loading}
+              />
+            </div>
+            <button
+              type="button"
+              className="btn btn--outline btn--sm"
+              onClick={handleTryExample}
+              disabled={tryingExample || loading}
+            >
+              {tryingExample ? 'Loading…' : '🎲 Try example'}
+            </button>
           </div>
         )}
 
         <div className="card upload-row">
           <div className="upload-row__zone">
-            <UploadZone onFile={handleFile} disabled={loading} />
+            <UploadZone onFile={handleFile} disabled={loading || tryingExample} />
           </div>
           {file && (
             <div className="upload-row__preview">
               <ImagePreview file={file} previewUrl={previewUrl} />
+            </div>
+          )}
+          {randomSample && (
+            <div className="upload-row__preview">
+              <div className="preview">
+                <p className="preview__filename">Random sample</p>
+                <img
+                  src={`data:image/png;base64,${randomSample.image}`}
+                  alt="Random sample"
+                  className="preview__img"
+                />
+                <p className="verdict">
+                  {randomSample.correct
+                    ? <span className="verdict--ok">✓ Correct</span>
+                    : <span className="verdict--fail">✗ Predicted <strong>{randomSample.predicted_glyph}</strong> · true: <strong>{randomSample.true_glyph}</strong></span>
+                  }
+                  <span className="verdict__conf"> conf {Math.round(randomSample.confidence * 100)}%</span>
+                </p>
+              </div>
             </div>
           )}
         </div>

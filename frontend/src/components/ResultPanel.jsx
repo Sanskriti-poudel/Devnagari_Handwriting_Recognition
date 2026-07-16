@@ -18,6 +18,8 @@ export default function ResultPanel({ result }) {
     URL.revokeObjectURL(url)
   }
 
+  const conf = result.confidence != null ? result.confidence * 100 : null
+
   return (
     <div className="result">
       <div className="result__header">
@@ -41,14 +43,32 @@ export default function ResultPanel({ result }) {
         spellCheck={false}
       />
 
+      {result.preprocessed_b64 && (
+        <div className="result__preprocessed">
+          <span className="result__preprocessed-label">What the model sees (64×64):</span>
+          <img
+            src={result.preprocessed_b64}
+            alt="Preprocessed input"
+            className="result__preprocessed-img"
+          />
+        </div>
+      )}
+
       <div className="result__meta">
         <span className="badge">
           Model: <strong>{result.model_used}</strong>
         </span>
-        {result.confidence != null && (
-          <span className="badge">
-            Confidence: <strong>{(result.confidence * 100).toFixed(1)}%</strong>
-          </span>
+        {conf !== null && (
+          <div className="confidence-wrapper">
+            <span className="badge confidence-label">Confidence:</span>
+            <div className="confidence-bar" title={`${conf.toFixed(1)}%`}>
+              <div
+                className="confidence-bar__fill"
+                style={{ width: `${conf.toFixed(1)}%` }}
+              />
+            </div>
+            <span className="confidence-value">{conf.toFixed(1)}%</span>
+          </div>
         )}
         {result.processing_time_ms != null && (
           <span className="badge">

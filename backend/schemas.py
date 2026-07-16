@@ -10,6 +10,7 @@ class OCRResult(BaseModel):
     recognized_text: str
     confidence: Optional[float] = None
     processing_time_ms: Optional[float] = None
+    preprocessed_b64: Optional[str] = None  # base64 PNG of 64×64 preprocessed input
     created_at: Optional[datetime] = None
 
 

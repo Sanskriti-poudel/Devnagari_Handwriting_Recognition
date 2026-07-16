@@ -97,12 +97,25 @@ async def ocr(
         await f.write(contents)
 
     start = time.time()
+    preprocessed_b64 = None
     if ext == "pdf":
         pages = await run_in_threadpool(run_ocr_pdf, save_path, model_name)
         result_text = "\n\n".join(f"[Page {p['page']}]\n{p['text']}" for p in pages)
         confidence = sum(p["confidence"] for p in pages) / len(pages) if pages else 0.0
     else:
         result_text, confidence = await run_in_threadpool(run_ocr, save_path, model_name)
+        # Encode the preprocessed input (what the model actually sees) as a base64 PNG
+        try:
+            import cv2
+            from services.preprocessing import preprocess_for_inference
+            proc = preprocess_for_inference(save_path)          # (1,1,64,64) float
+            proc = (proc.squeeze() * 255).astype("uint8")       # (64,64) uint8
+            ok, buf = cv2.imencode(".png", proc)
+            if ok:
+                import base64 as _b64
+                preprocessed_b64 = f"data:image/png;base64,{_b64.b64encode(buf).decode()}"
+        except Exception:
+            preprocessed_b64 = None
     elapsed_ms = round((time.time() - start) * 1000, 2)
 
     db = SessionLocal()
@@ -132,6 +145,7 @@ async def ocr(
         recognized_text=result_text,
         confidence=confidence,
         processing_time_ms=elapsed_ms,
+        preprocessed_b64=preprocessed_b64,
         created_at=created_at,
     )
 
@@ -191,6 +205,44 @@ async def export_document(body: ExportRequest):
         )
 
     raise HTTPException(400, "Unknown export format. Use txt, docx or pdf.")
+
+
+@app.get("/random")
+def random_sample():
+    """A random held-out test image with its CRNN prediction and ground-truth verdict.
+
+    Used by the demo "Try an example" button.
+    """
+    import random, base64, os
+    from ml_models.loader import REPO_ROOT
+    from data.devanagari_labels import class_to_glyph
+    from services.ocr import run_ocr
+
+    test_dir = os.path.join(REPO_ROOT, "Datasets", "test")
+    if not os.path.isdir(test_dir):
+        raise HTTPException(503, "Test dataset not found on server")
+
+    classes = os.listdir(test_dir)
+    cls = random.choice(classes)
+    cls_dir = os.path.join(test_dir, cls)
+    img_file = random.choice(os.listdir(cls_dir))
+    img_path = os.path.join(cls_dir, img_file)
+
+    text, conf = run_ocr(img_path, "crnn")
+    true_glyph = class_to_glyph(cls)
+    pred_glyph = text.strip()
+    correct = pred_glyph == true_glyph
+
+    with open(img_path, "rb") as f:
+        img_b64 = base64.b64encode(f.read()).decode()
+
+    return {
+        "image": img_b64,
+        "true_glyph": true_glyph,
+        "predicted_glyph": pred_glyph,
+        "confidence": conf,
+        "correct": correct,
+    }
 
 
 @app.get("/history", response_model=list[OCRResult])

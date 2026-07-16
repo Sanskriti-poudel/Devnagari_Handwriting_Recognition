@@ -62,12 +62,14 @@ def _pixmap_to_bgr(pix):
 
 
 def _pdf_to_bgr_pages(raw):
-    """Render EVERY page of a PDF (bytes) to a list of BGR ndarrays, or None on failure."""
+    """Render EVERY page of a PDF (bytes) to a list of BGR ndarrays.
+
+    Tries PyMuPDF first (best quality), then falls back to pdf2image/PIL.
+    Returns None if no PDF library is available.
+    """
+    # --- fast high-quality path: PyMuPDF ---------------------------------
     try:
         import fitz  # PyMuPDF
-    except ImportError:
-        return None
-    try:
         doc = fitz.open(stream=raw, filetype="pdf")
         if doc.page_count == 0:
             return None
@@ -75,6 +77,28 @@ def _pdf_to_bgr_pages(raw):
         for i in range(doc.page_count):
             pix = doc.load_page(i).get_pixmap(matrix=fitz.Matrix(2, 2))
             pages.append(_pixmap_to_bgr(pix))
+        return pages
+    except Exception:
+        pass
+
+    # --- fallback: pdf2image + PIL ----------------------------------------
+    try:
+        from pdf2image import convert_from_path
+        from PIL import Image
+        import tempfile, os
+
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            tmp.write(raw)
+            tmp.flush()
+            try:
+                imgs = convert_from_path(tmp.name, dpi=144)
+            finally:
+                os.unlink(tmp.name)
+
+        pages = []
+        for im in imgs:
+            bgr = cv2.cvtColor(np.array(im), cv2.COLOR_RGB2BGR)
+            pages.append(bgr)
         return pages
     except Exception:
         return None

@@ -17,11 +17,15 @@ function downloadBlob(blob, filename) {
 export default function DocumentResultPanel({ result, docId, text, onTextChange }) {
   const [romanOn, setRomanOn] = useState(false)
   const [exporting, setExporting] = useState(null)
+  const [pageIdx, setPageIdx] = useState(0)
 
   if (!result) return null
 
+  const pages = result.pages || []
+  const multiPage = pages.length > 1
+  const currentPage = pages[pageIdx] || {}
+
   const engineLabel = result.engine === 'word-trocr' ? 'Word-level TrOCR' : 'CRNN (char)'
-  const pct = Math.round((result.avg_confidence || 0) * 100)
 
   const handleCopy = () => {
     navigator.clipboard.writeText(text)
@@ -70,10 +74,39 @@ export default function DocumentResultPanel({ result, docId, text, onTextChange 
     }
   }
 
+  const pct = Math.round((result.avg_confidence || 0) * 100)
+
   return (
     <div className="doc-result">
-      {result.annotated && (
+      {result.annotated && !multiPage && (
         <img className="doc-result__annotated" src={result.annotated} alt="Annotated scan" />
+      )}
+
+      {multiPage && (
+        <div className="doc-result__page-viewer">
+          <div className="doc-result__page-nav">
+            {pages.map((_, i) => (
+              <button
+                key={i}
+                type="button"
+                className={['page-dot', i === pageIdx ? 'page-dot--active' : ''].filter(Boolean).join(' ')}
+                onClick={() => setPageIdx(i)}
+                aria-label={`Page ${i + 1}`}
+              />
+            ))}
+          </div>
+          {pages[pageIdx]?.annotated && (
+            <img
+              className="doc-result__annotated"
+              src={pages[pageIdx].annotated}
+              alt={`Page ${pageIdx + 1} annotated`}
+            />
+          )}
+          <div className="doc-result__page-info">
+            Page {pageIdx + 1} of {pages.length} · {pages[pageIdx]?.num_lines || 0} lines · {pages[pageIdx]?.num_chars || 0} chars ·{' '}
+            {Math.round((pages[pageIdx]?.avg_confidence || 0) * 100)}% conf
+          </div>
+        </div>
       )}
 
       <div className="doc-result__stats">
