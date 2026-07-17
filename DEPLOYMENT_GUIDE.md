@@ -86,14 +86,14 @@ https://devnagari-ocr-backend.onrender.com
 # Install Railway CLI (alternative to Render)
 npm install -g @railway/cli
 railway login
-cd wt_backend
+cd .
 railway init  # Only if creating new project
 railway up
 ```
 
 ### Repository Structure
 ```
-wt_backend/
+./
 ├── backend/           # FastAPI application (MAIN)
 │   ├── main.py        # FastAPI app entry point
 │   ├── requirements.txt
@@ -173,11 +173,10 @@ git push origin frontend
 
 ### Update Backend
 ```bash
-cd wt_backend
-# Make code changes
+# Make code changes to backend/ directory
 git add -A
 git commit -m "Update description"
-git push origin backend
+git push origin main
 # Render auto-deploys (if GitHub integration enabled)
 # OR manually trigger deploy in Render Dashboard
 ```
@@ -234,7 +233,7 @@ cd wt_frontend/frontend
 git remote set-url origin https://github.com/Sanskriti-Poudel/Devnagari_Handwriting_Recognition.git
 
 # Fix backend remote
-cd wt_backend
+cd .
 git remote set-url origin https://github.com/Sanskriti-Poudel/devnagari-ocr-backend.git
 ```
 

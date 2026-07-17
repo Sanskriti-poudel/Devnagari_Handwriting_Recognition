@@ -6,3 +6,9 @@ __pycache__/
 .ipynb_checkpoints/
 .vercel
 Devnagari_Handwriting_Recognition/
+wt_backend/
+wt_frontend/
+backend/venv/
+backend/__pycache__/
+backend/.venv/
+frontend/node_modules/

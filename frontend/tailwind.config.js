@@ -1,0 +1,140 @@
+/** @type {import('tailwindcss').Config} */
+export default {
+  darkMode: 'class',
+  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+  theme: {
+    extend: {
+      fontFamily: {
+        sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        devanagari: ['Noto Sans Devanagari', 'Inter', 'sans-serif'],
+      },
+      colors: {
+        indigo: {
+          DEFAULT: '#4F46E5',
+          50: '#EEF0FD',
+          100: '#DFE1FB',
+          200: '#C0C3F7',
+          300: '#9DA1F1',
+          400: '#7B7FEA',
+          500: '#4F46E5',
+          600: '#3F35CE',
+          700: '#312AA3',
+          800: '#252078',
+          900: '#191552',
+        },
+        cyan: {
+          DEFAULT: '#06B6D4',
+          50: '#E5FBFF',
+          100: '#CCF7FE',
+          200: '#99EEFD',
+          300: '#66E4FB',
+          400: '#33DBFA',
+          500: '#06B6D4',
+          600: '#0592AB',
+          700: '#046D80',
+          800: '#034955',
+          900: '#01242B',
+        },
+        violet: {
+          DEFAULT: '#7C3AED',
+          50: '#F3EBFE',
+          100: '#E7D6FD',
+          200: '#CFADFB',
+          300: '#B685F9',
+          400: '#9E5CF7',
+          500: '#7C3AED',
+          600: '#5F1FCB',
+          700: '#481898',
+          800: '#301066',
+          900: '#180833',
+        },
+        emerald: {
+          DEFAULT: '#10B981',
+          50: '#E7FBF4',
+          100: '#CFF7E9',
+          500: '#10B981',
+          600: '#0D9367',
+          700: '#0A6E4E',
+        },
+        amber: {
+          DEFAULT: '#F59E0B',
+          50: '#FEF6E7',
+          500: '#F59E0B',
+          600: '#C67F09',
+        },
+        rose: {
+          DEFAULT: '#EF4444',
+          50: '#FDECEC',
+          500: '#EF4444',
+          600: '#CB2B2B',
+        },
+        surface: {
+          light: '#F8FAFC',
+          dark: '#09090B',
+        },
+        card: {
+          light: '#FFFFFF',
+          dark: '#18181B',
+        },
+      },
+      backgroundImage: {
+        'gradient-brand': 'linear-gradient(135deg, #4F46E5 0%, #7C3AED 55%, #06B6D4 100%)',
+        'gradient-brand-soft': 'linear-gradient(135deg, rgba(79,70,229,0.15) 0%, rgba(124,58,237,0.15) 55%, rgba(6,182,212,0.15) 100%)',
+        'gradient-radial': 'radial-gradient(circle at center, var(--tw-gradient-stops))',
+      },
+      boxShadow: {
+        soft: '0 2px 8px 0 rgba(15, 15, 30, 0.06)',
+        card: '0 4px 24px -4px rgba(15, 15, 30, 0.08)',
+        'card-dark': '0 4px 24px -4px rgba(0, 0, 0, 0.4)',
+        glow: '0 0 0 1px rgba(124,58,237,0.15), 0 8px 32px -8px rgba(124,58,237,0.45)',
+        'glow-cyan': '0 0 0 1px rgba(6,182,212,0.15), 0 8px 32px -8px rgba(6,182,212,0.45)',
+      },
+      borderRadius: {
+        xl: '0.875rem',
+        '2xl': '1.25rem',
+        '3xl': '1.75rem',
+      },
+      keyframes: {
+        shimmer: {
+          '0%': { backgroundPosition: '-1000px 0' },
+          '100%': { backgroundPosition: '1000px 0' },
+        },
+        float: {
+          '0%, 100%': { transform: 'translateY(0px)' },
+          '50%': { transform: 'translateY(-16px)' },
+        },
+        'float-slow': {
+          '0%, 100%': { transform: 'translateY(0px) translateX(0px)' },
+          '50%': { transform: 'translateY(-24px) translateX(12px)' },
+        },
+        'pulse-ring': {
+          '0%': { transform: 'scale(0.9)', opacity: '0.6' },
+          '70%': { transform: 'scale(1.4)', opacity: '0' },
+          '100%': { transform: 'scale(1.4)', opacity: '0' },
+        },
+        'scan-line': {
+          '0%': { transform: 'translateY(-100%)' },
+          '100%': { transform: 'translateY(100%)' },
+        },
+        'gradient-x': {
+          '0%, 100%': { backgroundPosition: '0% 50%' },
+          '50%': { backgroundPosition: '100% 50%' },
+        },
+        'fade-in-up': {
+          '0%': { opacity: '0', transform: 'translateY(12px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+      },
+      animation: {
+        shimmer: 'shimmer 2s infinite linear',
+        float: 'float 6s ease-in-out infinite',
+        'float-slow': 'float-slow 10s ease-in-out infinite',
+        'pulse-ring': 'pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'scan-line': 'scan-line 2.2s ease-in-out infinite',
+        'gradient-x': 'gradient-x 6s ease infinite',
+        'fade-in-up': 'fade-in-up 0.5s ease-out',
+      },
+    },
+  },
+  plugins: [],
+}

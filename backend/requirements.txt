@@ -1,0 +1,20 @@
+fastapi
+uvicorn[standard]
+python-multipart
+pillow
+opencv-python-headless
+numpy
+sqlalchemy
+aiofiles
+python-dotenv
+pdf2image
+pytest
+httpx
+pyjwt
+email-validator
+pymupdf
+python-docx
+# Deep learning — install the CPU wheel; for GPU replace with the CUDA variant from pytorch.org
+torch
+torchvision
+transformers>=4.30          # TrOCR (VisionEncoderDecoderModel, TrOCRProcessor)

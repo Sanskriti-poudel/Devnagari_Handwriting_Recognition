@@ -144,7 +144,7 @@ git push origin main
 
 ## 5. Project Structure
 
-### 5.1 Backend (`wt_backend/backend/`)
+### 5.1 Backend (`backend/`)
 
 ```
 backend/
@@ -227,11 +227,11 @@ npx vercel --prod --yes
 
 **Start Command (CRITICAL):**
 ```
-cd wt_backend/backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
 ```
-> ⚠️ Without the `cd wt_backend/backend &&` prefix, Render throws `Could not import module "main"`.
+> ⚠️ Without the `cd backend &&` prefix, Render throws `Could not import module "main"`.
 
-**Build Command:** `pip install -r wt_backend/backend/requirements.txt`
+**Build Command:** `pip install -r backend/requirements.txt`
 
 **Environment Variables:** See Section 7 below.
 
@@ -396,7 +396,7 @@ git push origin main
 
 ### Fix "Could not import module 'main'" on Render
 1. Go to Render Dashboard → Backend Service → Settings
-2. Set **Start Command** to: `cd wt_backend/backend && uvicorn main:app --host 0.0.0.0 --port $PORT`
+2. Set **Start Command** to: `cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT`
 3. Redeploy
 
 ### Add a New Environment Variable
@@ -405,7 +405,7 @@ git push origin main
 
 ### Run Backend Locally
 ```bash
-cd wt_backend/backend
+cd backend
 pip install -r requirements.txt
 cp .env.example .env  # edit paths if needed
 uvicorn main:app --reload
@@ -423,7 +423,7 @@ npm run dev
 ### Run Tests
 ```bash
 # Backend
-cd wt_backend/backend
+cd backend
 pytest
 
 # Frontend
