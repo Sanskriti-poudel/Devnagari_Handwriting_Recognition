@@ -1,7 +1,7 @@
-# Devanagari OCR — Frontend
+# Devnagari OCR — Frontend
 
 A premium, production-styled React SaaS frontend for the Devanagari Handwritten Document
-Recognition project. Talks to the real CRNN backend in `../webapp/server.py` over REST.
+Recognition project. Talks to the FastAPI backend (`wt_backend/backend/`) over REST.
 
 ## Stack
 
@@ -12,51 +12,70 @@ React Hook Form + Zod · TanStack Query · Zustand · Radix UI primitives · Rec
 
 ```bash
 npm install
-cp .env.example .env   # already done; edit VITE_API_URL if your Flask backend runs elsewhere
-npm run dev
+npm run dev          # http://localhost:5173
 ```
 
-Open http://localhost:5173. Sign up with any email, or use the seeded demo account shown on
-the login page (`savyata@example.com` / `password123`).
+Sign up with any email, or use the seeded demo account shown on the login page
+(`savyata@example.com` / `password123`).
 
 ## How this talks to the backend
 
-The Flask app in `../webapp/server.py` only implements three endpoints today:
-`POST /api/predict`, `POST /api/document`, `GET /api/random`. It has no auth, history, models,
-or health endpoints yet.
+Set `VITE_USE_MOCK_API=false` (default for production) to talk to the real Render backend.
+The Axios service layer (`src/services/*.service.ts`) calls the FastAPI endpoints exactly.
 
-To keep the UI fully usable in the meantime, `VITE_USE_MOCK_API=true` (the default, see `.env`)
-backs auth, OCR history, dashboard stats, and model/health status with an in-browser mock
-(`localStorage`, see `src/services/mock/mockDb.ts`). The **OCR recognition itself is real** —
-`src/services/ocr.service.ts` uploads to `POST /api/document` on the backend and shows the
-actual CRNN's output. Selecting "Transformer" in the model picker still calls the same real
-CRNN endpoint (the backend doesn't expose a second model yet) and the result is flagged
-`modelSimulated` so the UI says so instead of pretending.
+With `VITE_USE_MOCK_API=true`, auth, history, and dashboard are backed by in-browser
+`localStorage` (see `src/services/mock/mockDb.ts`) — OCR uploads still hit the real
+backend but with mock model responses.
 
-Once the backend grows real `/login`, `/signup`, `/history`, `/models`, `/health` endpoints,
-flip `VITE_USE_MOCK_API=false` — the Axios service layer (`src/services/*.service.ts`) already
-calls those exact paths.
+## API integration
+
+The frontend connects to the FastAPI backend at `https://devnagari-ocr-backend.onrender.com`.
+
+**Vercel rewrite** (`vercel.json`): `/api/*` → `https://devnagari-ocr-backend.onrender.com/api/*`
+
+Key endpoints used:
+- `POST /api/document` — OCR upload (image or PDF)
+- `POST /api/document/pages` — multi-page PDF OCR
+- `POST /api/export` — download as TXT / DOCX / PDF
+- `POST /signup`, `POST /login` — auth
+- `GET /history` — paginated history
+- `GET /dashboard/stats`, `GET /dashboard/activity` — dashboard
+- `GET /models`, `GET /health` — model & health status
 
 ## Project structure
 
 ```
 src/
-  components/   ui/ (design system), layout/ (shell), common/ (empty/error states, animations)
-  features/     auth/ dashboard/ ocr/ history/ profile/ settings/ — feature-scoped UI
-  pages/        route-level components (lazy loaded)
-  layouts/      AppLayout (sidebar+topbar shell), AuthLayout (split-screen)
-  routes/       route guards
-  services/     Axios instance + one service per domain + the mock backing store
-  stores/       Zustand stores (theme, auth, settings)
-  hooks/        TanStack Query hooks per domain
-  lib/          cn(), formatters, TXT/PDF export
-  types/        shared domain types
+├── components/
+│   ├── ui/           # Design system primitives (Button, Input, Card, etc.)
+│   ├── layout/       # Navbar, Sidebar, Footer
+│   ├── ocr/          # UploadZone, ResultDisplay, ModelSelector
+│   ├── auth/         # LoginForm, SignupForm
+│   ├── dashboard/    # StatsCards, ConfidenceChart, ActivityFeed
+│   └── history/      # HistoryTable, HistoryFilters, Pagination
+├── pages/
+│   ├── Home.tsx
+│   ├── Login.tsx / Signup.tsx
+│   ├── Dashboard.tsx
+│   ├── OCRPage.tsx       # Main recognition page
+│   ├── HistoryPage.tsx
+│   └── About.tsx
+├── hooks/            # TanStack Query hooks per domain
+├── services/
+│   ├── api.ts        # Axios instance
+│   ├── auth.service.ts
+│   ├── ocr.service.ts
+│   ├── history.service.ts
+│   └── dashboard.service.ts
+├── stores/           # Zustand stores (theme, auth)
+├── types/            # Shared TypeScript domain types
+└── lib/              # cn(), formatters, export utilities
 ```
 
 ## Notes
 
 - Dark/light theme persists to `localStorage` and respects `prefers-system-color-scheme`.
-- PDF export rasterizes the recognized text (with the Devanagari font actually applied) via
-  `html2canvas` and embeds it into a `jsPDF` document, since jsPDF's built-in fonts can't render
-  Devanagari glyphs. Both libraries are lazy-loaded on first PDF download.
+- PDF export rasterizes the recognized text with the Devanagari font applied via
+  `html2canvas` embedded in a `jsPDF` document — both lazy-loaded on first PDF download.
 - `npm run build` runs a full `tsc -b` type check before bundling.
+- `VITE_USE_MOCK_API=false` in production — the app expects the real backend.
