@@ -70,7 +70,7 @@ def _to_rgb_pil(image):
     raise TypeError(f"Unsupported image type: {type(image)}")
 
 
-def predict_lines(images, checkpoint_path=None, device=None):
+def predict_lines(images, checkpoint_path=None, device=None, include_confidence=True):
     """Recognize a BATCH of line/word images in one model.generate() call.
 
     Sequential per-line generate() calls each pay the same fixed model
@@ -90,11 +90,11 @@ def predict_lines(images, checkpoint_path=None, device=None):
     with torch.no_grad():
         out = model.generate(
             pixel_values, max_length=MAX_TARGET_LENGTH,
-            output_scores=True, return_dict_in_generate=True,
+            output_scores=include_confidence, return_dict_in_generate=True,
         )
     texts = [t.strip() for t in processor.batch_decode(out.sequences, skip_special_tokens=True)]
 
-    if out.scores:
+    if include_confidence and out.scores:
         # out.scores: one (batch, vocab) tensor per generated step.
         per_step_max = [torch.softmax(step, dim=-1).max(dim=-1).values for step in out.scores]
         confidences = torch.stack(per_step_max, dim=1).mean(dim=1).tolist()
@@ -113,7 +113,7 @@ def predict_line(image, checkpoint_path=None, device=None):
     return predict_lines([image], checkpoint_path=checkpoint_path, device=device)[0]
 
 
-def predict_page(image, checkpoint_path=None, device=None):
+def predict_page(image, checkpoint_path=None, device=None, include_confidence=True):
     """Read a whole page: segment into lines, recognize each, stitch into text.
 
     Returns {
@@ -133,7 +133,7 @@ def predict_page(image, checkpoint_path=None, device=None):
 
     boxes = segment_line_boxes(bgr)
     crops = [bgr[y:y + h, x:x + w] for (x, y, w, h) in boxes]
-    line_results = predict_lines(crops, checkpoint_path=checkpoint_path, device=device)
+    line_results = predict_lines(crops, checkpoint_path=checkpoint_path, device=device, include_confidence=include_confidence)
     results = [
         {"box": box, "text": r["text"], "confidence": r["confidence"]}
         for box, r in zip(boxes, line_results)

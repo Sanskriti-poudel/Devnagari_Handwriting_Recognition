@@ -35,7 +35,7 @@ def preprocess_for_inference(image_path: str) -> np.ndarray:
         gray, 255,
         cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
         cv2.THRESH_BINARY_INV,
-        11, 2,
+        15, 2,  # larger block = cleaner threshold, less noise to process
     )
     thresh = _deskew(thresh)
     resized = cv2.resize(thresh, (IMG_SIZE, IMG_SIZE))

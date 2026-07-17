@@ -14,6 +14,8 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
 def load_all_models():
+    import torch
+    torch.set_num_threads(8)  # more threads = faster CPU inference
     from config import CRNN_MODEL_PATH, TRANSFORMER_MODEL_PATH, DEVICE
     _load_crnn(CRNN_MODEL_PATH, DEVICE)
     _load_transformer(TRANSFORMER_MODEL_PATH, DEVICE)
@@ -31,6 +33,8 @@ def _load_crnn(model_path: str, device: str):
         model = CRNN(num_classes=NUM_CLASSES)
         model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
         model.eval()
+        # Dynamic quantization for ~2-3x faster CPU inference
+        model = torch.quantization.quantize_dynamic(model, {torch.nn.LSTM, torch.nn.Linear}, dtype=torch.qint8)
         loaded_models["crnn"] = model
         logger.info("CRNN loaded from %s on device=%s", model_path, device)
     except Exception as exc:

@@ -42,12 +42,19 @@ class DocumentOCRResult(BaseModel):
 
 # ---- /api/document/pages — multi-page PDF OCR with per-line boxes, feeds export --
 
+class LineBox(BaseModel):
+    """A single recognized line with its bounding box (pixel coordinates)."""
+    box: tuple[int, int, int, int]  # (x, y, w, h)
+    text: str
+
+
 class DocumentPageResult(BaseModel):
     annotated: Optional[str] = None
     text: str
     num_lines: int
     num_chars: int
     avg_confidence: float
+    lines: Optional[list[LineBox]] = None  # per-line boxes for DOCX layout export
 
 
 class DocumentOCRResponse(BaseModel):
@@ -67,6 +74,7 @@ class ExportRequest(BaseModel):
     format: str
     text: str
     doc_id: Optional[str] = None
+    lines: Optional[list[dict]] = None  # optional per-line boxes for DOCX layout
 
 
 # ---- Auth --------------------------------------------------------------------

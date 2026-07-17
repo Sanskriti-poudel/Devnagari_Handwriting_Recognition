@@ -12,6 +12,7 @@ import time
 import unicodedata
 import uuid
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import cv2
 import numpy as np
@@ -101,7 +102,9 @@ def _ocr_page_wordlevel(bgr):
     from models.trocr.predict_words import predict_page
 
     checkpoint = loaded_models["transformer"]
-    out = predict_page(bgr, checkpoint_path=checkpoint, device=DEVICE)
+    # include_confidence=False skips O(vocab_size) softmax per decode step — significant
+    # speedup on CPU. We recalculate mean confidence from the per-line results below.
+    out = predict_page(bgr, checkpoint_path=checkpoint, device=DEVICE, include_confidence=False)
     lines = []
     for ln in out["lines"]:
         lines.append({
@@ -173,23 +176,96 @@ def _ocr_page_charlevel(bgr):
     }
 
 
+def detect_columns(boxes, page_width, page_height):
+    """Cluster line boxes into columns using horizontal gap analysis.
+
+    Returns a list of columns, each column = list of boxes sorted in reading
+    order (top-to-bottom, left-to-right). For typical 1-2 column Nepali/Devanagari
+    documents. Degrades gracefully to single column when no gap threshold is crossed.
+    """
+    if not boxes:
+        return []
+
+    # Sort by y (top-to-bottom), then x (left-to-right)
+    sorted_boxes = sorted(boxes, key=lambda b: (b[1], b[0]))
+
+    # Compute median line height to handle baseline drift
+    heights = [b[3] for b in sorted_boxes]
+    med_h = float(np.median(heights))
+    if med_h == 0:
+        return [sorted_boxes]
+
+    # Cluster into lines: boxes within 1.5 * med_h of current baseline are same line
+    lines = []
+    current_line = [sorted_boxes[0]]
+    last_y = sorted_boxes[0][1]
+    for box in sorted_boxes[1:]:
+        if box[1] - last_y <= 1.5 * med_h:
+            current_line.append(box)
+        else:
+            lines.append(sorted(current_line, key=lambda b: b[0]))
+            current_line = [box]
+        last_y = box[1]
+    if current_line:
+        lines.append(sorted(current_line, key=lambda b: b[0]))
+
+    # Detect column breaks: large horizontal gap between consecutive boxes in a line
+    col_gap_threshold = max(2 * med_h, 0.2 * page_width)
+    is_two_col = False
+    for line in lines:
+        if len(line) >= 2:
+            gap = line[1][0] - (line[0][0] + line[0][2])
+            if gap > col_gap_threshold:
+                is_two_col = True
+                break
+
+    if not is_two_col:
+        return [sorted_boxes]
+
+    # Two-column layout: split by page midpoint
+    mid = page_width / 2
+    left_col, right_col = [], []
+    for line in lines:
+        for box in line:
+            if box[0] + box[2] / 2 < mid:
+                left_col.append(box)
+            else:
+                right_col.append(box)
+
+    result = []
+    if left_col:
+        result.append(sorted(left_col, key=lambda b: (b[1], b[0])))
+    if right_col:
+        result.append(sorted(right_col, key=lambda b: (b[1], b[0])))
+    return result
+
+
 def run_document_ocr(pages):
     """list[np.ndarray] (BGR pages) -> (response_dict, error_message_or_None)."""
     ocr_page = _ocr_page_wordlevel if "transformer" in loaded_models else _ocr_page_charlevel
     t0 = time.perf_counter()
 
-    page_results, cache_pages = [], []
-    any_lines = False
-    for bgr in pages:
-        res = ocr_page(bgr)
-        if res["lines"]:
-            any_lines = True
-        page_results.append(res)
-        cache_pages.append({
-            "bgr": bgr,
-            "lines": [{"box": ln["box"], "text": ln["text"]} for ln in res["lines"]],
-        })
+    # Parallelize across pages — PyTorch releases the GIL so threads run concurrently
+    max_workers = min(4, len(pages))
+    page_results = [None] * len(pages)
+    cache_pages = [None] * len(pages)
 
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(ocr_page, bgr): i for i, bgr in enumerate(pages)}
+        for future in as_completed(futures):
+            idx = futures[future]
+            res = future.result()
+            page_results[idx] = res
+            cache_pages[idx] = {
+                "bgr": pages[idx],
+                "lines": [{"box": ln["box"], "text": ln["text"]} for ln in res["lines"]],
+            }
+
+    # Restore original order (ThreadPoolExecutor returns in completion order)
+    page_results = [r for r in page_results if r is not None]
+    cache_pages = [c for c in cache_pages if c is not None]
+
+    any_lines = any(r["lines"] for r in page_results)
     if not any_lines:
         msg = ("No text lines detected. Try a clearer, higher-contrast scan."
                if ocr_page is _ocr_page_wordlevel
@@ -219,6 +295,7 @@ def run_document_ocr(pages):
             "num_lines": r["num_lines"],
             "num_chars": r["num_chars"],
             "avg_confidence": r["avg_confidence"],
+            "lines": r["lines"],  # include per-line boxes for DOCX layout export
         } for r in page_results],
     }
     return response, None

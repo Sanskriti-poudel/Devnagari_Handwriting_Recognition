@@ -309,9 +309,9 @@ async def api_document_pages(file: UploadFile = File(...)):
 async def api_export(body: ExportRequest):
     """Download recognized text as txt | docx | (searchable) pdf.
 
-    txt/docx use the (possibly user-edited) `text`; pdf rebuilds a searchable
-    PDF from the cached page images + OCR line boxes for `doc_id` (returned
-    by /api/document/pages).
+    txt/plain text; docx uses the optional `lines` data for layout-preserving
+    table output; pdf rebuilds a searchable PDF from cached page images + line
+    boxes for `doc_id` (returned by /api/document/pages).
     """
     fmt = (body.format or "").lower()
 
@@ -323,7 +323,7 @@ async def api_export(body: ExportRequest):
         )
 
     if fmt == "docx":
-        data = build_docx(body.text)
+        data = build_docx(body.text, line_data=body.lines)
         return Response(
             content=data,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
