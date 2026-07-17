@@ -1,12 +1,8 @@
 Datasets/
 *.h5
-*.pth
-*.pt
-*.safetensors
 *.bin
-# model weight dirs (HF save_pretrained); share via Drive/Kaggle, not git
-models/crnn/checkpoints/
-models/trocr/checkpoints/
+__pycache__/
+.ipynb_checkpoints/
 __pycache__/
 .ipynb_checkpoints/
 backend/.env
