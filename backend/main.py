@@ -68,25 +68,31 @@ app.add_middleware(
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     start = time.time()
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        logger.error(f"Uncaught exception in middleware chain for {request.method} {request.url.path}: {exc}")
+        raise
     ms = round((time.time() - start) * 1000, 2)
     logger.info(f"{request.method} {request.url.path} → {response.status_code} ({ms}ms)")
     return response
 
 
 @app.exception_handler(RequestValidationError)
-async def validation_error_handler(request, exc):
+async def validation_error_handler(request: Request, exc):
+    logger.warning(f"RequestValidationError on {request.method} {request.url.path}: {exc}")
     return JSONResponse(status_code=422, content={"error": "Validation failed", "detail": str(exc)})
 
 
 @app.exception_handler(HTTPException)
-async def http_error_handler(request, exc: HTTPException):
+async def http_error_handler(request: Request, exc: HTTPException):
+    logger.warning(f"HTTPException {exc.status_code} on {request.method} {request.url.path}: {exc.detail}")
     return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
 
 
 @app.exception_handler(Exception)
-async def generic_error_handler(request, exc):
-    logger.error(f"Unhandled error: {exc}")
+async def generic_error_handler(request: Request, exc):
+    logger.error(f"Unhandled error on {request.method} {request.url.path}: {exc}")
     return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
 
@@ -111,12 +117,12 @@ def _models_payload() -> list[OcrModelOut]:
     ]
 
 
-@app.get("/models", response_model=list[OcrModelOut])
+@app.api_route("/models", methods=["GET", "OPTIONS"], response_model=list[OcrModelOut])
 def list_models():
     return _models_payload()
 
 
-@app.get("/health", response_model=HealthOut)
+@app.api_route("/health", methods=["GET", "OPTIONS"], response_model=HealthOut)
 def health():
     models = _models_payload()
     any_real = any(m.status == "active" for m in models)
@@ -144,7 +150,7 @@ def _user_out(user: User) -> UserOut:
     )
 
 
-@app.post("/signup", response_model=AuthResponse)
+@app.api_route("/signup", methods=["POST", "OPTIONS"], response_model=AuthResponse)
 def signup(body: SignupBody, db=Depends(get_db)):
     if db.query(User).filter(User.email == body.email).first():
         raise HTTPException(400, "An account with this email already exists.")
@@ -160,7 +166,7 @@ def signup(body: SignupBody, db=Depends(get_db)):
     return AuthResponse(user=_user_out(user), access_token=create_access_token(user.id))
 
 
-@app.post("/login", response_model=AuthResponse)
+@app.api_route("/login", methods=["POST", "OPTIONS"], response_model=AuthResponse)
 def login(body: LoginBody, db=Depends(get_db)):
     user = db.query(User).filter(User.email == body.email).first()
     if not user or not verify_password(body.password, user.password_hash):
@@ -168,18 +174,18 @@ def login(body: LoginBody, db=Depends(get_db)):
     return AuthResponse(user=_user_out(user), access_token=create_access_token(user.id))
 
 
-@app.post("/logout")
+@app.api_route("/logout", methods=["POST", "OPTIONS"])
 def logout():
     # Stateless JWT — nothing to invalidate server-side for this project's scope.
     return {"ok": True}
 
 
-@app.post("/refresh-token", response_model=AuthResponse)
+@app.api_route("/refresh-token", methods=["POST", "OPTIONS"], response_model=AuthResponse)
 def refresh_token(user: User = Depends(get_current_user)):
     return AuthResponse(user=_user_out(user), access_token=create_access_token(user.id))
 
 
-@app.post("/forgot-password")
+@app.api_route("/forgot-password", methods=["POST", "OPTIONS"])
 def forgot_password(body: ForgotPasswordBody, db=Depends(get_db)):
     # Never reveal whether the email exists. Real email delivery is out of scope
     # for this project; log it instead so it's visible during a demo/defense.
@@ -189,7 +195,7 @@ def forgot_password(body: ForgotPasswordBody, db=Depends(get_db)):
     return {"ok": True}
 
 
-@app.post("/reset-password")
+@app.api_route("/reset-password", methods=["POST", "OPTIONS"])
 def reset_password(body: ResetPasswordBody):
     logger.info("[reset-password] no-op — token-based email reset is not implemented")
     return {"ok": True}
@@ -213,7 +219,7 @@ def _make_thumbnail(raw: bytes, filename: str) -> str | None:
         return None
 
 
-@app.post("/api/document", response_model=DocumentOCRResult)
+@app.api_route("/api/document", methods=["POST", "OPTIONS"], response_model=DocumentOCRResult)
 async def api_document(
     image: UploadFile = File(...),
     model: str = Form("crnn"),
@@ -284,7 +290,7 @@ async def api_document(
     )
 
 
-@app.post("/api/document/pages", response_model=DocumentOCRResponse)
+@app.api_route("/api/document/pages", methods=["POST", "OPTIONS"], response_model=DocumentOCRResponse)
 async def api_document_pages(file: UploadFile = File(...)):
     """Multi-page document OCR with per-line boxes, feeding /api/export.
 
@@ -305,7 +311,7 @@ async def api_document_pages(file: UploadFile = File(...)):
     return response
 
 
-@app.post("/api/export")
+@app.api_route("/api/export", methods=["POST", "OPTIONS"])
 async def api_export(body: ExportRequest):
     """Download recognized text as txt | docx | (searchable) pdf.
 
@@ -344,7 +350,7 @@ async def api_export(body: ExportRequest):
     raise HTTPException(400, "Unknown export format. Use txt, docx or pdf.")
 
 
-@app.get("/api/random")
+@app.api_route("/api/random", methods=["GET", "OPTIONS"])
 def api_random():
     # No held-out test set is bundled with the backend in this deployment.
     raise HTTPException(404, "No sample images are available on this server.")
@@ -354,7 +360,7 @@ def api_random():
 # Legacy Contract-B endpoint, kept so nothing that already depends on it breaks
 # --------------------------------------------------------------------------
 
-@app.post("/ocr", response_model=OCRResult)
+@app.api_route("/ocr", methods=["POST", "OPTIONS"], response_model=OCRResult)
 async def ocr(file: UploadFile = File(...), model_name: str = Form("crnn")):
     filename = file.filename or "upload"
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
@@ -412,7 +418,7 @@ async def ocr(file: UploadFile = File(...), model_name: str = Form("crnn")):
     )
 
 
-@app.get("/history/{result_id}", response_model=OCRResult)
+@app.api_route("/history/{result_id}", methods=["GET", "DELETE", "OPTIONS"], response_model=OCRResult)
 def get_history_one(result_id: int, db=Depends(get_db), user: User = Depends(get_current_user)):
     rec = (
         db.query(RecognizedText)
@@ -455,7 +461,7 @@ def _history_item_out(rec: RecognizedText) -> HistoryItemOut:
     )
 
 
-@app.get("/history", response_model=PaginatedHistoryOut)
+@app.api_route("/history", methods=["GET", "DELETE", "OPTIONS"], response_model=PaginatedHistoryOut)
 def list_history(
     search: str = "",
     model: str = "all",
@@ -499,25 +505,13 @@ def list_history(
     )
 
 
-@app.delete("/history/{result_id}")
-def delete_history(result_id: int, db=Depends(get_db), user: User = Depends(get_current_user)):
-    rec = (
-        db.query(RecognizedText)
-        .filter(RecognizedText.id == result_id, RecognizedText.user_id == user.id)
-        .first()
-    )
-    if not rec:
-        raise HTTPException(404, "Result not found")
-    db.delete(rec)
-    db.commit()
-    return {"ok": True}
 
 
 # --------------------------------------------------------------------------
 # Dashboard — aggregated from the same recognitions table
 # --------------------------------------------------------------------------
 
-@app.get("/dashboard/stats", response_model=DashboardStatsOut)
+@app.api_route("/dashboard/stats", methods=["GET", "OPTIONS"], response_model=DashboardStatsOut)
 def dashboard_stats(db=Depends(get_db), user: User = Depends(get_current_user)):
     recs = db.query(RecognizedText).filter(RecognizedText.user_id == user.id).all()
 
@@ -549,7 +543,7 @@ def dashboard_stats(db=Depends(get_db), user: User = Depends(get_current_user)):
     )
 
 
-@app.get("/dashboard/activity", response_model=list[ActivityItemOut])
+@app.api_route("/dashboard/activity", methods=["GET", "OPTIONS"], response_model=list[ActivityItemOut])
 def dashboard_activity(db=Depends(get_db), user: User = Depends(get_current_user)):
     recs = (
         db.query(RecognizedText)
