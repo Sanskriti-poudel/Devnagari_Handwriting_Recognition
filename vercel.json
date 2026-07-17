@@ -1,5 +1,4 @@
 {
-  "rootDirectory": "wt_frontend/frontend",
   "buildCommand": "cd wt_frontend/frontend && npm run build",
   "outputDirectory": "wt_frontend/frontend/dist",
   "framework": "vite",
