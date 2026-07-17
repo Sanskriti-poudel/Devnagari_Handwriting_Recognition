@@ -1,0 +1,26 @@
+# Devanagari Handwritten Character Recognition — Python dependencies
+# Install: pip install -r requirements.txt
+# (CUDA users: install the matching torch/torchvision build from pytorch.org first.)
+
+# Deep learning
+torch>=2.0
+torchvision>=0.15
+transformers>=4.30          # TrOCR (VisionEncoderDecoderModel, TrOCRProcessor)
+
+# Image / array processing
+opencv-python>=4.7          # cv2 — shared preprocessing pipeline
+numpy>=1.23
+Pillow>=9.0                 # PIL — TrOCR RGB inputs
+
+# Data prep & EDA
+scikit-learn>=1.2           # stratified train/val/test split
+pandas>=1.5
+matplotlib>=3.6
+tqdm>=4.64
+
+# Evaluation metrics
+jiwer>=3.0                  # CER / WER
+
+# Demo UI
+streamlit>=1.30            # demo/app.py — mid-defense demo over the real CRNN
+PyMuPDF>=1.24              # webapp PDF upload — render first page to an image

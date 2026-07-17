@@ -1,0 +1,19 @@
+{
+  "id": "sanskritipoudel/devnagari-trocr-training",
+  "title": "Devnagari TrOCR Training",
+  "code_file": "kaggle_train_trocr.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "machine_shape": "NvidiaTeslaT4",
+  "enable_tpu": false,
+  "enable_internet": true,
+  "keywords": [],
+  "dataset_sources": [
+    "sanskritipoudel/devnagari-preprocessed"
+  ],
+  "kernel_sources": [],
+  "competition_sources": [],
+  "model_sources": []
+}
