@@ -50,7 +50,7 @@ def build_docx(text, line_data=None):
     """
     import io
     from docx import Document
-    from docx.shared import Pt, Twip
+    from docx.shared import Pt, Twips as Twip
 
     doc = Document()
 
