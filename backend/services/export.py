@@ -24,6 +24,12 @@ except Exception:  # pragma: no cover - generate_synth import should not fail
 
 
 def _devanagari_font_file():
+    # Prefer Ganesh ( Nepali font) over others
+    fonts_dir = os.path.join(os.path.dirname(__file__), "..", "fonts")
+    for font_name in ["ganesh.ttf", "NotoSansDevanagari.ttf"]:
+        font_path = os.path.join(fonts_dir, font_name)
+        if os.path.exists(font_path):
+            return font_path
     for p in default_font_paths():
         if os.path.exists(p):
             return p
@@ -41,57 +47,64 @@ def _set_devanagari_font(run):
 
 
 def build_docx(text, line_data=None, page_image=None):
-    """Recognized text -> .docx bytes.
+    """Recognized text -> .docx bytes with table structure preserved.
 
-    When line_data is provided (list of {box: [x,y,w,h], text: str}), creates
-    a layout-preserving document with the original page image as background
-    and OCR text overlaid at the detected positions.
+    Detects table layouts from line_data by analyzing horizontal gaps between
+    text boxes. Creates proper multi-column editable DOCX tables with Devanagari
+    font support.
 
-    If page_image is provided (numpy BGR array), embeds it as a full-page
-    background image and places text boxes at the detected line positions,
-    preserving the original document's visual appearance.
-
-    Falls back to simple paragraph-per-line format if no line_data.
+    If page_image is provided, the page dimensions match the image and the image
+    is embedded as background. Text is rendered on top in gray for visibility
+    while preserving the original appearance.
     """
     import io
     import numpy as np
     from docx import Document
-    from docx.shared import Pt, Twips as Twip, Inches, RGBColor, Emu
+    from docx.shared import Pt, Twips as Twip, Inches, RGBColor, Cm, Emu
     from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.oxml.ns import qn, nsmap
+    from docx.oxml.ns import qn
     from docx.oxml import OxmlElement
     import base64
 
     doc = Document()
 
-    # Set page to exact dimensions for the page image
+    # Encode page image if provided
+    img_bytes = None
+    img_width_inches = None
+    img_height_inches = None
+
     if page_image is not None:
-        h, w = page_image.shape[:2]
-        # Set page size to match image dimensions (in inches, 1 inch = 96 pixels at 96dpi)
-        page_w_inches = w / 96.0
-        page_h_inches = h / 96.0
+        rgb = page_image if page_image.ndim == 3 else cv2.cvtColor(page_image, cv2.COLOR_GRAY2BGR)
+        ok, buf = cv2.imencode(".png", rgb)
+        if ok:
+            img_bytes = buf.tobytes()
+            h, w = page_image.shape[:2]
+            # Use 96 DPI for page size
+            img_width_inches = w / 96.0
+            img_height_inches = h / 96.0
+
+    # Set page dimensions
+    if img_width_inches and img_height_inches:
         for section in doc.sections:
-            section.page_width = Inches(page_w_inches)
-            section.page_height = Inches(page_h_inches)
+            section.page_width = Inches(img_width_inches)
+            section.page_height = Inches(img_height_inches)
             section.left_margin = Inches(0)
             section.right_margin = Inches(0)
             section.top_margin = Inches(0)
             section.bottom_margin = Inches(0)
-
-        # Encode image
-        rgb = page_image if page_image.ndim == 3 else cv2.cvtColor(page_image, cv2.COLOR_GRAY2BGR)
-        ok, buf = cv2.imencode(".png", rgb)
-        if not ok:
-            page_image = None
-        else:
-            img_bytes = buf.tobytes()
+    else:
+        for section in doc.sections:
+            section.left_margin = Cm(2)
+            section.right_margin = Cm(2)
+            section.top_margin = Cm(1)
+            section.bottom_margin = Cm(1)
 
     if not line_data:
         # Fallback: simple paragraphs
         for raw_line in (text or "").split("\n"):
             para = doc.add_paragraph(raw_line)
-            para.paragraph_format.space_before = Pt(0)
-            para.paragraph_format.space_after = Pt(0)
+            para.paragraph_format.space_before = Pt(2)
+            para.paragraph_format.space_after = Pt(2)
             run = para.runs[0] if para.runs else para.add_run(raw_line)
             run.font.size = Pt(11)
             _set_devanagari_font(run)
@@ -99,85 +112,200 @@ def build_docx(text, line_data=None, page_image=None):
         doc.save(bio)
         return bio.getvalue()
 
-    # Group lines by vertical proximity (within 10 pixels = same line)
-    def group_lines_by_y(lines):
+    # Filter lines with valid boxes and sort by y then x
+    valid_lines = [ln for ln in line_data if ln.get("box")]
+    if not valid_lines:
+        # No valid boxes, use simple paragraphs
+        for raw_line in (text or "").split("\n"):
+            para = doc.add_paragraph(raw_line)
+            run = para.add_run(raw_line)
+            run.font.size = Pt(11)
+            _set_devanagari_font(run)
+        bio = io.BytesIO()
+        doc.save(bio)
+        return bio.getvalue()
+
+    # Group lines by vertical proximity (within 15 pixels = same row)
+    def group_lines_by_row(lines):
         if not lines:
             return []
-        sorted_lines = sorted(lines, key=lambda l: l["box"][1] if l.get("box") else 0)
-        groups = []
-        current_group = [sorted_lines[0]]
-        last_y = sorted_lines[0]["box"][1] if sorted_lines[0].get("box") else 0
-        for ln in sorted_lines[1:]:
-            y = ln["box"][1] if ln.get("box") else 0
-            if abs(y - last_y) <= 10:
-                current_group.append(ln)
+        sorted_lines = sorted(lines, key=lambda l: (l["box"][1], l["box"][0]))
+        rows = []
+        current_row = []
+        last_y = sorted_lines[0]["box"][1]
+
+        for ln in sorted_lines:
+            y = ln["box"][1]
+            if abs(y - last_y) <= 15:
+                current_row.append(ln)
             else:
-                groups.append(sorted(current_group, key=lambda l: l["box"][0]))
-                current_group = [ln]
-            last_y = y
-        if current_group:
-            groups.append(sorted(current_group, key=lambda l: l["box"][0]))
-        return groups
+                if current_row:
+                    rows.append(sorted(current_row, key=lambda l: l["box"][0]))
+                current_row = [ln]
+                last_y = y
+        if current_row:
+            rows.append(sorted(current_row, key=lambda l: l["box"][0]))
+        return rows
 
-    line_groups = group_lines_by_y([ln for ln in line_data if ln.get("box")])
+    rows = group_lines_by_row(valid_lines)
 
-    if page_image is not None:
-        # Add page image as the first paragraph (full page background)
+    # Detect columns by analyzing horizontal gaps between text boxes across all rows
+    # A "significant" gap (more than 2x median gap) indicates a column boundary
+    def detect_column_boundaries(rows, num_cols_hint=None):
+        """Detect column boundaries from horizontal positions of text boxes."""
+        if not rows:
+            return None
+
+        # Collect all x-start and x-end positions
+        all_positions = []
+        for row in rows:
+            for ln in row:
+                x, y, w, h = ln["box"]
+                all_positions.append((x, x + w))
+
+        if len(all_positions) < 2:
+            return None
+
+        # Calculate gaps between consecutive text boxes on the same row
+        gaps = []
+        for row in rows:
+            if len(row) < 2:
+                continue
+            sorted_row = sorted(row, key=lambda l: l["box"][0])
+            for i in range(len(sorted_row) - 1):
+                gap = sorted_row[i + 1]["box"][0] - (sorted_row[i]["box"][0] + sorted_row[i]["box"][2])
+                if gap > 0:
+                    gaps.append(gap)
+
+        if not gaps:
+            return None
+
+        # Median gap indicates "normal" spacing between columns in same cell
+        median_gap = np.median(gaps)
+        # Significant gaps (> 3x median) indicate column boundaries
+        threshold = max(median_gap * 3, 30)  # At least 30 pixels gap
+
+        # Find column boundaries by detecting large gaps
+        boundaries = set()
+        for row in rows:
+            if len(row) < 2:
+                continue
+            sorted_row = sorted(row, key=lambda l: l["box"][0])
+            for i in range(len(sorted_row) - 1):
+                gap = sorted_row[i + 1]["box"][0] - (sorted_row[i]["box"][0] + sorted_row[i]["box"][2])
+                if gap > threshold:
+                    # This is a column boundary
+                    boundary = sorted_row[i]["box"][0] + sorted_row[i]["box"][2]
+                    boundaries.add(boundary)
+
+        if not boundaries:
+            return None
+
+        # Sort boundaries and create column ranges
+        sorted_boundaries = sorted(boundaries)
+        col_ranges = []
+        for i, boundary in enumerate(sorted_boundaries):
+            if i == 0:
+                col_ranges.append((0, boundary))
+            else:
+                col_ranges.append((sorted_boundaries[i - 1], boundary))
+        col_ranges.append((sorted_boundaries[-1], 2000))  # Last column extends to right
+
+        return col_ranges
+
+    # Try to detect columns
+    col_ranges = detect_column_boundaries(rows)
+
+    # Helper to assign text to columns based on x position
+    def assign_to_columns(row, col_ranges):
+        """Assign each text box in a row to a column based on x position."""
+        if col_ranges is None:
+            return [(0, row)]  # Single column
+
+        assignments = {i: [] for i in range(len(col_ranges))}
+        for ln in row:
+            x = ln["box"][0]
+            for col_idx, (start, end) in enumerate(col_ranges):
+                if start <= x < end:
+                    assignments[col_idx].append(ln)
+                    break
+            else:
+                # Default to last column if no match
+                assignments[len(col_ranges) - 1].append(ln)
+
+        return [(idx, items) for idx, items in assignments.items() if items]
+
+    # Build the DOCX table
+    num_cols = len(col_ranges) if col_ranges else 1
+    num_rows = len(rows)
+
+    # If page image provided, add it as background first
+    if img_bytes and img_width_inches and img_height_inches:
+        # Add image paragraph at the beginning (will be behind subsequent content)
+        # We use a picture with absolute positioning via VML
         para = doc.add_paragraph()
         para.alignment = WD_ALIGN_PARAGRAPH.LEFT
         para.paragraph_format.space_before = Pt(0)
         para.paragraph_format.space_after = Pt(0)
         run = para.add_run()
-        run.add_picture(io.BytesIO(img_bytes), width=Inches(page_w_inches))
+        run.add_picture(io.BytesIO(img_bytes), width=Inches(img_width_inches))
+        # Move this image to the back by manipulating XML
+        # Get the paragraph element and move it to the body start
+        body = doc._element.body
+        para_elem = para._p
+        body.insert(0, para_elem)
 
-        # Now add each line as a positioned text box
-        # We use a table with invisible borders to position text
-        dpi = 96.0  # screen dpi
-
-        for group in line_groups:
-            for ln in group:
-                box = ln.get("box")
-                if not box:
-                    continue
-                x, y, w, h = box
-                txt = ln.get("text") or ""
-
-                # Create a new paragraph with explicit positioning
-                # DOCX doesn't support true absolute positioning,
-                # but we can use a table with 1 cell to approximate
-                para = doc.add_paragraph()
-                para.paragraph_format.space_before = Pt(0)
-                para.paragraph_format.space_after = Pt(0)
-                para.paragraph_format.line_spacing = 1.0
-
-                # Estimate font size from box height (pixels -> points, ~0.75 factor)
-                fontsize = max(6.0, min(h * 0.45, 12.0))
-                run = para.add_run(txt)
-                run.font.size = Pt(fontsize)
-                _set_devanagari_font(run)
-                # Make text subtle so image shows through
-                run.font.color.rgb = RGBColor(128, 128, 128)
-    else:
-        # No image: use table layout with grouped lines
-        table = doc.add_table(rows=len(line_groups), cols=1)
+    # If we detected columns, use them; otherwise fall back to single column per row
+    if col_ranges and num_cols > 1:
+        # Create table with detected columns
+        table = doc.add_table(rows=num_rows, cols=num_cols)
         table.style = "Table Grid"
 
-        for i, group in enumerate(line_groups):
-            row = table.rows[i]
-            # Set row height
-            max_h = max((ln["box"][3] for ln in group if ln.get("box")), default=20)
-            row.height = Twip(int(max_h * 15 * 0.5))  # Convert to twips
+        # Set column widths based on detected ranges
+        for row_idx, row in enumerate(rows):
+            assignments = assign_to_columns(row, col_ranges)
+            for col_idx, col_items in assignments:
+                cell = table.rows[row_idx].cells[col_idx]
+                para = cell.paragraphs[0]
+                para.paragraph_format.space_before = Pt(1)
+                para.paragraph_format.space_after = Pt(1)
+                para.paragraph_format.line_spacing = 1.0
 
-            cell = row.cells[0]
-            # Build text from all lines in this group
-            group_text = " ".join(ln.get("text", "") for ln in group)
+                # Combine text from all items in this cell
+                cell_text = " ".join(ln.get("text", "") for ln in sorted(col_items, key=lambda l: l["box"][0]))
+                if cell_text:
+                    run = para.add_run(cell_text)
+                    run.font.size = Pt(10)
+                    _set_devanagari_font(run)
+                    # Make text semi-transparent if image is present
+                    if img_bytes:
+                        run.font.color.rgb = RGBColor(128, 128, 128)
+
+                # Set column width
+                start, end = col_ranges[col_idx]
+                width_twips = int((end - start) * 15 / 8)  # Approximate conversion
+                cell.width = Twip(max(width_twips, 500))
+    else:
+        # Fallback: single column per row (treat each row as one cell)
+        table = doc.add_table(rows=num_rows, cols=1)
+        table.style = "Table Grid"
+
+        for row_idx, row in enumerate(rows):
+            cell = table.rows[row_idx].cells[0]
             para = cell.paragraphs[0]
-            para.paragraph_format.space_before = Pt(0)
-            para.paragraph_format.space_after = Pt(0)
+            para.paragraph_format.space_before = Pt(1)
+            para.paragraph_format.space_after = Pt(1)
             para.paragraph_format.line_spacing = 1.0
-            run = para.add_run(group_text)
-            run.font.size = Pt(max(8.0, min(max_h * 0.4, 12.0)))
-            _set_devanagari_font(run)
+
+            # Combine all text in this row
+            row_text = " ".join(ln.get("text", "") for ln in sorted(row, key=lambda l: l["box"][0]))
+            if row_text:
+                run = para.add_run(row_text)
+                run.font.size = Pt(10)
+                _set_devanagari_font(run)
+                # Make text semi-transparent if image is present
+                if img_bytes:
+                    run.font.color.rgb = RGBColor(128, 128, 128)
 
     bio = io.BytesIO()
     doc.save(bio)
