@@ -329,7 +329,13 @@ async def api_export(body: ExportRequest):
         )
 
     if fmt == "docx":
-        data = build_docx(body.text, line_data=body.lines)
+        # Get page image from cache if doc_id is provided
+        page_image = None
+        if body.doc_id:
+            cached = get_cached_doc(body.doc_id)
+            if cached and len(cached) > 0:
+                page_image = cached[0].get("bgr")
+        data = build_docx(body.text, line_data=body.lines, page_image=page_image)
         return Response(
             content=data,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",

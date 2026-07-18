@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 loaded_models: dict = {}
 
 # The ML package (models/trocr, models/crnn) lives at the repo root, a sibling
-# of backend/ — add it to sys.path so `models.trocr.predict_words` resolves.
+# of backend/ — add it to sys.path so `models.troft` resolves.
 # Safe because this backend package is `ml_models`, not `models` (no name clash).
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -52,7 +52,7 @@ def _load_transformer(model_path: str, device: str):
     try:
         if REPO_ROOT not in sys.path:
             sys.path.insert(0, REPO_ROOT)
-        from models.trocr.predict_words import _load as _load_trocr, _resolve_checkpoint
+        from models.troft.predict_words import _load as _load_trocr, _resolve_checkpoint
 
         checkpoint = _resolve_checkpoint(model_path)
         _load_trocr(checkpoint, device)  # warms the lru_cache

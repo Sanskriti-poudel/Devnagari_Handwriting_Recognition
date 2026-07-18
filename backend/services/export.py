@@ -40,60 +40,144 @@ def _set_devanagari_font(run):
     rfonts.set(qn("w:cs"), "Mangal")
 
 
-def build_docx(text, line_data=None):
+def build_docx(text, line_data=None, page_image=None):
     """Recognized text -> .docx bytes.
 
     When line_data is provided (list of {box: [x,y,w,h], text: str}), creates
-    a table with one row per detected line, preserving original line heights
-    and horizontal positions. Without line_data, falls back to one paragraph
-    per newline-delimited line.
+    a layout-preserving document with the original page image as background
+    and OCR text overlaid at the detected positions.
+
+    If page_image is provided (numpy BGR array), embeds it as a full-page
+    background image and places text boxes at the detected line positions,
+    preserving the original document's visual appearance.
+
+    Falls back to simple paragraph-per-line format if no line_data.
     """
     import io
+    import numpy as np
     from docx import Document
-    from docx.shared import Pt, Twips as Twip
+    from docx.shared import Pt, Twips as Twip, Inches, RGBColor, Emu
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml.ns import qn, nsmap
+    from docx.oxml import OxmlElement
+    import base64
 
     doc = Document()
 
+    # Set page to exact dimensions for the page image
+    if page_image is not None:
+        h, w = page_image.shape[:2]
+        # Set page size to match image dimensions (in inches, 1 inch = 96 pixels at 96dpi)
+        page_w_inches = w / 96.0
+        page_h_inches = h / 96.0
+        for section in doc.sections:
+            section.page_width = Inches(page_w_inches)
+            section.page_height = Inches(page_h_inches)
+            section.left_margin = Inches(0)
+            section.right_margin = Inches(0)
+            section.top_margin = Inches(0)
+            section.bottom_margin = Inches(0)
+
+        # Encode image
+        rgb = page_image if page_image.ndim == 3 else cv2.cvtColor(page_image, cv2.COLOR_GRAY2BGR)
+        ok, buf = cv2.imencode(".png", rgb)
+        if not ok:
+            page_image = None
+        else:
+            img_bytes = buf.tobytes()
+
     if not line_data:
-        # Fallback: one paragraph per newline-delimited line
+        # Fallback: simple paragraphs
         for raw_line in (text or "").split("\n"):
-            para = doc.add_paragraph()
-            run = para.add_run(raw_line)
-            run.font.size = Pt(14)
+            para = doc.add_paragraph(raw_line)
+            para.paragraph_format.space_before = Pt(0)
+            para.paragraph_format.space_after = Pt(0)
+            run = para.runs[0] if para.runs else para.add_run(raw_line)
+            run.font.size = Pt(11)
             _set_devanagari_font(run)
         bio = io.BytesIO()
         doc.save(bio)
         return bio.getvalue()
 
-    # Table-based layout: one row per detected line, preserving line height + position
-    # 1 twip = 1/20 point = 1/1440 inch; 1 pixel ≈ 0.75 twip at 96dpi
-    for ln in line_data:
-        box = ln.get("box")
-        if not box:
-            continue
-        x, y, w, h = box
-        txt = ln.get("text") or ""
+    # Group lines by vertical proximity (within 10 pixels = same line)
+    def group_lines_by_y(lines):
+        if not lines:
+            return []
+        sorted_lines = sorted(lines, key=lambda l: l["box"][1] if l.get("box") else 0)
+        groups = []
+        current_group = [sorted_lines[0]]
+        last_y = sorted_lines[0]["box"][1] if sorted_lines[0].get("box") else 0
+        for ln in sorted_lines[1:]:
+            y = ln["box"][1] if ln.get("box") else 0
+            if abs(y - last_y) <= 10:
+                current_group.append(ln)
+            else:
+                groups.append(sorted(current_group, key=lambda l: l["box"][0]))
+                current_group = [ln]
+            last_y = y
+        if current_group:
+            groups.append(sorted(current_group, key=lambda l: l["box"][0]))
+        return groups
 
-        # Add a table with 1 row, 1 cell — row height = original line height
-        table = doc.add_table(rows=1, cols=1)
-        row = table.rows[0]
-        # h is in pixels; convert to twips (h * 15 = twips, since 1px ≈ 15 twips at typical rendering)
-        row.height = Twip(int(h * 15))
+    line_groups = group_lines_by_y([ln for ln in line_data if ln.get("box")])
 
-        cell = row.cells[0]
-        # Cell width = original line width
-        cell.width = Twip(w)
+    if page_image is not None:
+        # Add page image as the first paragraph (full page background)
+        para = doc.add_paragraph()
+        para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        para.paragraph_format.space_before = Pt(0)
+        para.paragraph_format.space_after = Pt(0)
+        run = para.add_run()
+        run.add_picture(io.BytesIO(img_bytes), width=Inches(page_w_inches))
 
-        para = cell.paragraphs[0]
-        # Estimate font size from box height (h * 0.5, clamped to 8-14pt)
-        fontsize = Pt(max(8.0, min(h * 0.5, 14.0)))
-        run = para.add_run(txt)
-        run.font.size = fontsize
-        _set_devanagari_font(run)
+        # Now add each line as a positioned text box
+        # We use a table with invisible borders to position text
+        dpi = 96.0  # screen dpi
 
-        # Add an empty paragraph after the table row to create vertical spacing
-        # (tables don't auto-space in docx the way we need)
-        doc.add_paragraph()
+        for group in line_groups:
+            for ln in group:
+                box = ln.get("box")
+                if not box:
+                    continue
+                x, y, w, h = box
+                txt = ln.get("text") or ""
+
+                # Create a new paragraph with explicit positioning
+                # DOCX doesn't support true absolute positioning,
+                # but we can use a table with 1 cell to approximate
+                para = doc.add_paragraph()
+                para.paragraph_format.space_before = Pt(0)
+                para.paragraph_format.space_after = Pt(0)
+                para.paragraph_format.line_spacing = 1.0
+
+                # Estimate font size from box height (pixels -> points, ~0.75 factor)
+                fontsize = max(6.0, min(h * 0.45, 12.0))
+                run = para.add_run(txt)
+                run.font.size = Pt(fontsize)
+                _set_devanagari_font(run)
+                # Make text subtle so image shows through
+                run.font.color.rgb = RGBColor(128, 128, 128)
+    else:
+        # No image: use table layout with grouped lines
+        table = doc.add_table(rows=len(line_groups), cols=1)
+        table.style = "Table Grid"
+
+        for i, group in enumerate(line_groups):
+            row = table.rows[i]
+            # Set row height
+            max_h = max((ln["box"][3] for ln in group if ln.get("box")), default=20)
+            row.height = Twip(int(max_h * 15 * 0.5))  # Convert to twips
+
+            cell = row.cells[0]
+            # Build text from all lines in this group
+            group_text = " ".join(ln.get("text", "") for ln in group)
+            para = cell.paragraphs[0]
+            para.paragraph_format.space_before = Pt(0)
+            para.paragraph_format.space_after = Pt(0)
+            para.paragraph_format.line_spacing = 1.0
+            run = para.add_run(group_text)
+            run.font.size = Pt(max(8.0, min(max_h * 0.4, 12.0)))
+            _set_devanagari_font(run)
 
     bio = io.BytesIO()
     doc.save(bio)
